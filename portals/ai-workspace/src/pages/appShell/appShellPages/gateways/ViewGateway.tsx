@@ -147,15 +147,6 @@ GATEWAY_REGISTRATION_TOKEN=${tokenValue}
 ENVFILE`;
 };
 
-const getConfigureGatewayWithMoesifGuideCommand = () => {
-  const controlPlaneHost = CONTROLPLANE_HOST;
-  return `cat > ${GATEWAY_ENV_FILE} << 'ENVFILE'
-GATEWAY_CONTROLPLANE_HOST=${controlPlaneHost}
-GATEWAY_REGISTRATION_TOKEN=<your-gateway-token>
-MOESIF_KEY=<your-moesif-key>
-ENVFILE`;
-};
-
 const getStep3NavigateCommand = () => `cd ${GATEWAY_FOLDER_NAME}`;
 
 const getStartGatewayDisplayCommand = () =>
@@ -990,40 +981,12 @@ GATEWAY_REGISTRATION_TOKEN=${registrationToken || ''}`;
                         },
                       }}
                     />
-                    <Card
-                      variant="outlined"
-                      sx={{
-                        mt: 2,
-                        p: 2,
-                        borderColor: 'info.main',
-                        bgcolor: 'background.default',
-                      }}
-                    >
-                      <Typography
-                        variant="body2"
-                        color="info.main"
-                        sx={{ mb: 1.5, fontWeight: 500 }}
-                      >
-                        To enable Moesif analytics, manually add the{' '}
-                        <code>MOESIF_KEY</code> to the file. Example:
-                      </Typography>
-                      <Box
-                        component="pre"
-                        sx={{
-                          m: 0,
-                          p: 1.5,
-                          borderRadius: 1,
-                          bgcolor: 'action.hover',
-                          fontFamily: 'monospace',
-                          fontSize: '0.8rem',
-                          overflow: 'auto',
-                          whiteSpace: 'pre-wrap',
-                          wordBreak: 'break-all',
-                        }}
-                      >
-                        {getConfigureGatewayWithMoesifGuideCommand()}
-                      </Box>
-                    </Card>
+                    <Alert severity="info" sx={{ mt: 2 }}>
+                      To gain gateway analytics, you can integrate with Moesif
+                      by adding your Moesif application token with the key{' '}
+                      <code>MOESIF_KEY</code> to your{' '}
+                      <code>configs/keys.env</code>.
+                    </Alert>
                   </>
                 ) : (
                   <>
@@ -1312,40 +1275,12 @@ GATEWAY_REGISTRATION_TOKEN=${registrationToken || ''}`;
                         },
                       }}
                     />
-                    <Card
-                      variant="outlined"
-                      sx={{
-                        mt: 2,
-                        p: 2,
-                        borderColor: 'info.main',
-                        bgcolor: 'background.default',
-                      }}
-                    >
-                      <Typography
-                        variant="body2"
-                        color="info.main"
-                        sx={{ mb: 1.5, fontWeight: 500 }}
-                      >
-                        To enable Moesif analytics, manually add the{' '}
-                        <code>MOESIF_KEY</code> to the file. Example:
-                      </Typography>
-                      <Box
-                        component="pre"
-                        sx={{
-                          m: 0,
-                          p: 1.5,
-                          borderRadius: 1,
-                          bgcolor: 'action.hover',
-                          fontFamily: 'monospace',
-                          fontSize: '0.8rem',
-                          overflow: 'auto',
-                          whiteSpace: 'pre-wrap',
-                          wordBreak: 'break-all',
-                        }}
-                      >
-                        {getConfigureGatewayWithMoesifGuideCommand()}
-                      </Box>
-                    </Card>
+                    <Alert severity="info" sx={{ mt: 2 }}>
+                      To gain gateway analytics, you can integrate with Moesif
+                      by adding your Moesif application token with the key{' '}
+                      <code>MOESIF_KEY</code> to your{' '}
+                      <code>configs/keys.env</code>.
+                    </Alert>
                   </>
                 ) : (
                   <>
@@ -1565,40 +1500,12 @@ GATEWAY_REGISTRATION_TOKEN=${registrationToken || ''}`;
                         },
                       }}
                     />
-                    <Card
-                      variant="outlined"
-                      sx={{
-                        mt: 2,
-                        p: 2,
-                        borderColor: 'info.main',
-                        bgcolor: 'background.default',
-                      }}
-                    >
-                      <Typography
-                        variant="body2"
-                        color="info.main"
-                        sx={{ mb: 1.5, fontWeight: 500 }}
-                      >
-                        To enable Moesif analytics, manually add the{' '}
-                        <code>MOESIF_KEY</code> to the file. Example:
-                      </Typography>
-                      <Box
-                        component="pre"
-                        sx={{
-                          m: 0,
-                          p: 1.5,
-                          borderRadius: 1,
-                          bgcolor: 'action.hover',
-                          fontFamily: 'monospace',
-                          fontSize: '0.8rem',
-                          overflow: 'auto',
-                          whiteSpace: 'pre-wrap',
-                          wordBreak: 'break-all',
-                        }}
-                      >
-                        {getConfigureGatewayWithMoesifGuideCommand()}
-                      </Box>
-                    </Card>
+                    <Alert severity="info" sx={{ mt: 2 }}>
+                      To gain gateway analytics, you can integrate with Moesif
+                      by adding your Moesif application token with the key{' '}
+                      <code>MOESIF_KEY</code> to your{' '}
+                      <code>configs/keys.env</code>.
+                    </Alert>
                   </>
                 ) : (
                   <>
