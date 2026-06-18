@@ -37,6 +37,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	commonconstants "github.com/wso2/api-platform/common/constants"
 	api "github.com/wso2/api-platform/gateway/gateway-controller/pkg/api/management"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/models"
 )
@@ -214,73 +215,94 @@ func TestAPIUtilsService_SaveAPIDefinition(t *testing.T) {
 	})
 }
 
-func TestAPIUtilsService_PushAPIDeployment(t *testing.T) {
+func TestAPIUtilsService_PushArtifact(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	// Helper function to create minimal test StoredConfig
-	createTestStoredConfig := func() *models.StoredConfig {
+	// Helper function to create a minimal test StoredConfig whose Configuration is the
+	// gateway artifact CR (apiVersion/kind/metadata/spec), as actually stored.
+	createTestStoredConfig := func(kind string) *models.StoredConfig {
+		md := api.Metadata{Name: "weather-api"}
+		// A well-formed project-scoped CR carries the project as a metadata annotation.
+		if kind != models.KindLlmProvider && kind != models.KindLlmProviderTemplate {
+			md.Annotations = &map[string]string{commonconstants.AnnotationProjectID: "weather-project"}
+		}
 		return &models.StoredConfig{
 			UUID:         "0000-test-api-0000-000000000000",
-			Kind:         "RestApi",
+			Kind:         kind,
+			Handle:       "weather-api",
+			DisplayName:  "Weather API",
+			Version:      "v1.0",
 			DesiredState: models.StateDeployed,
 			Origin:       models.OriginGatewayAPI,
 			CreatedAt:    time.Now(),
 			UpdatedAt:    time.Now(),
-			// Configuration will be marshaled in the HTTP request body
-			Configuration: api.RestAPI{},
+			Configuration: api.RestAPI{
+				ApiVersion: "gateway.api-platform.wso2.com/v1alpha1",
+				Kind:       api.RestAPIKindRestApi,
+				Metadata:   md,
+				Spec:       api.APIConfigData{Version: "v1.0"},
+			},
+			SourceConfiguration: api.RestAPI{
+				ApiVersion: "gateway.api-platform.wso2.com/v1alpha1",
+				Kind:       api.RestAPIKindRestApi,
+				Metadata:   md,
+				Spec:       api.APIConfigData{Version: "v1.0"},
+			},
 		}
 	}
 
-	t.Run("Successful push", func(t *testing.T) {
+	t.Run("Successful push targets the generic import endpoint with envelope body", func(t *testing.T) {
 		server := newHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			assert.Equal(t, "POST", r.Method)
-			assert.Equal(t, "/apis/0000-test-api-0000-000000000000/gateway-deployments", r.URL.Path)
+			assert.Equal(t, "/artifacts/import-gateway-artifact", r.URL.Path)
 			assert.Equal(t, "test-token", r.Header.Get("api-key"))
 			assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 
-			// Verify request body contains expected fields
 			body, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
-			var notification APIDeploymentPush
-			err = json.Unmarshal(body, &notification)
+			var req ImportArtifactRequest
+			err = json.Unmarshal(body, &req)
 			require.NoError(t, err)
-			assert.Equal(t, "0000-test-api-0000-000000000000", notification.ID)
+			assert.Equal(t, "0000-test-api-0000-000000000000", req.ID)
+			// configuration is the gateway artifact CR itself.
+			assert.Equal(t, "RestApi", req.Configuration["kind"])
+			md, _ := req.Configuration["metadata"].(map[string]interface{})
+			assert.Equal(t, "weather-api", md["name"])
+			// Project-scoped kind carries its project via the project-id annotation (from the CR; never defaulted).
+			anns, _ := md["annotations"].(map[string]interface{})
+			assert.Equal(t, "weather-project", anns[commonconstants.AnnotationProjectID])
+			assert.Equal(t, "deployed", req.Status)
 
-			w.WriteHeader(http.StatusCreated)
-			w.Write([]byte(`{"status": "deployed"}`))
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"id":"0000-test-api-0000-000000000000","origin":"DP","status":"deployed"}`))
 		}))
 		defer server.Close()
 
-		cfg := PlatformAPIConfig{
-			BaseURL: server.URL,
-			Token:   "test-token",
-		}
-		svc := NewAPIUtilsService(cfg, logger)
-
-		// Actually call the method
-		err := svc.PushAPIDeployment("0000-test-api-0000-000000000000", createTestStoredConfig(), "")
+		svc := NewAPIUtilsService(PlatformAPIConfig{BaseURL: server.URL, Token: "test-token"}, logger)
+		cpArtifactID, err := svc.PushArtifact("0000-test-api-0000-000000000000", createTestStoredConfig("RestApi"), "")
 		assert.NoError(t, err)
+		// The CP-minted artifact UUID from the response is returned to the caller.
+		assert.Equal(t, "0000-test-api-0000-000000000000", cpArtifactID)
 	})
 
-	t.Run("With deployment ID", func(t *testing.T) {
+	t.Run("Org-level kind omits project", func(t *testing.T) {
 		server := newHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			assert.Equal(t, "POST", r.Method)
-			assert.Equal(t, "/apis/0000-test-api-0000-000000000000/gateway-deployments", r.URL.Path)
-			assert.Contains(t, r.URL.RawQuery, "deploymentId=rev-123")
-			assert.Equal(t, "test-token", r.Header.Get("api-key"))
-			assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+			assert.Equal(t, "/artifacts/import-gateway-artifact", r.URL.Path)
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+			var req ImportArtifactRequest
+			require.NoError(t, json.Unmarshal(body, &req))
+			// Organization-level kinds carry no project annotation.
+			md, _ := req.Configuration["metadata"].(map[string]interface{})
+			anns, _ := md["annotations"].(map[string]interface{})
+			_, hasProject := anns[commonconstants.AnnotationProjectID]
+			assert.False(t, hasProject, "org-level kind must not carry a project annotation")
 			w.WriteHeader(http.StatusOK)
 		}))
 		defer server.Close()
 
-		cfg := PlatformAPIConfig{
-			BaseURL: server.URL,
-			Token:   "test-token",
-		}
-		svc := NewAPIUtilsService(cfg, logger)
-
-		// Actually call the method with deployment ID
-		err := svc.PushAPIDeployment("0000-test-api-0000-000000000000", createTestStoredConfig(), "rev-123")
+		svc := NewAPIUtilsService(PlatformAPIConfig{BaseURL: server.URL, Token: "test-token"}, logger)
+		_, err := svc.PushArtifact("0000-test-api-0000-000000000000", createTestStoredConfig("LlmProvider"), "")
 		assert.NoError(t, err)
 	})
 
@@ -291,16 +313,39 @@ func TestAPIUtilsService_PushAPIDeployment(t *testing.T) {
 		}))
 		defer server.Close()
 
-		cfg := PlatformAPIConfig{
-			BaseURL: server.URL,
-			Token:   "test-token",
-		}
-		svc := NewAPIUtilsService(cfg, logger)
-
-		// Should return error for non-success status
-		err := svc.PushAPIDeployment("0000-test-api-0000-000000000000", createTestStoredConfig(), "")
+		svc := NewAPIUtilsService(PlatformAPIConfig{BaseURL: server.URL, Token: "test-token"}, logger)
+		_, err := svc.PushArtifact("0000-test-api-0000-000000000000", createTestStoredConfig("RestApi"), "")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "500")
+	})
+
+	t.Run("Project-scoped kind without a project annotation fails the push (no defaulting)", func(t *testing.T) {
+		// Server must never be hit: the push fails before any HTTP request.
+		hit := false
+		server := newHTTPTestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hit = true
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		cfg := &models.StoredConfig{
+			UUID:         "0000-test-api-0000-000000000000",
+			Kind:         models.KindRestApi,
+			DesiredState: models.StateDeployed,
+			Origin:       models.OriginGatewayAPI,
+			Configuration: api.RestAPI{
+				ApiVersion: "gateway.api-platform.wso2.com/v1alpha1",
+				Kind:       api.RestAPIKindRestApi,
+				Metadata:   api.Metadata{Name: "no-project-api"}, // no project annotation
+				Spec:       api.APIConfigData{Version: "v1.0"},
+			},
+		}
+
+		svc := NewAPIUtilsService(PlatformAPIConfig{BaseURL: server.URL, Token: "test-token"}, logger)
+		_, err := svc.PushArtifact(cfg.UUID, cfg, "")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "project")
+		assert.False(t, hit, "no request should be sent when the project annotation is missing")
 	})
 }
 
@@ -689,20 +734,30 @@ func TestAPIUtilsService_ExtractDeploymentsFromBatchZip(t *testing.T) {
 	})
 }
 
-// Test for JSON marshaling of APIDeploymentPush
-func TestAPIDeploymentPush_JSON(t *testing.T) {
+// Test for JSON marshaling of the generic artifact import request body, where the
+// configuration is the gateway artifact CR.
+func TestImportArtifactRequest_JSON(t *testing.T) {
 	now := time.Now()
-	notification := APIDeploymentPush{
-		ID:                "0000-test-id-0000-000000000000",
-		Status:            "DEPLOYED",
-		CreatedAt:         now,
-		UpdatedAt:         now,
-		DeployedAt:        &now,
-		ProjectIdentifier: "default",
+	req := ImportArtifactRequest{
+		ID:     "0000-test-id-0000-000000000000",
+		Status: "deployed",
+		Configuration: map[string]interface{}{
+			"apiVersion": "gateway.api-platform.wso2.com/v1alpha1",
+			"kind":       "RestApi",
+			"metadata": map[string]interface{}{
+				"name":        "weather-api",
+				"annotations": map[string]interface{}{commonconstants.AnnotationProjectID: "default"},
+			},
+		},
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		DeployedAt: &now,
 	}
 
-	data, err := json.Marshal(notification)
+	data, err := json.Marshal(req)
 	assert.NoError(t, err)
 	assert.Contains(t, string(data), `"id":"0000-test-id-0000-000000000000"`)
-	assert.Contains(t, string(data), `"status":"DEPLOYED"`)
+	assert.Contains(t, string(data), `"status":"deployed"`)
+	assert.Contains(t, string(data), `"kind":"RestApi"`)
+	assert.Contains(t, string(data), `"name":"weather-api"`)
 }

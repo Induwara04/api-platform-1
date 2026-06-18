@@ -103,6 +103,7 @@ func TestRegisterGatewayProperties(t *testing.T) {
 		constants.GatewayFunctionalityTypeRegular,
 		"1.0",
 		properties,
+		false,
 	)
 	if err != nil {
 		t.Fatalf("RegisterGateway() error = %v", err)
@@ -122,6 +123,41 @@ func TestRegisterGatewayProperties(t *testing.T) {
 
 	if !reflect.DeepEqual(mockGatewayRepo.createdGateway.Properties, properties) {
 		t.Errorf("Create() gateway properties = %v, want %v", mockGatewayRepo.createdGateway.Properties, properties)
+	}
+}
+
+func TestRegisterGatewaySyncMetadata(t *testing.T) {
+	orgID := "123e4567-e89b-12d3-a456-426614174000"
+	mockOrgRepo := &mockOrganizationRepository{org: &model.Organization{ID: orgID}}
+
+	// syncMetadata = true is persisted and reflected in the response.
+	repoTrue := &mockGatewayRepository{}
+	svc := &GatewayService{gatewayRepo: repoTrue, orgRepo: mockOrgRepo}
+	resp, err := svc.RegisterGateway(orgID, "sync-gw", "Sync GW", "", "api.example.com",
+		false, constants.GatewayFunctionalityTypeRegular, "1.0", nil, true)
+	if err != nil {
+		t.Fatalf("RegisterGateway() error = %v", err)
+	}
+	if repoTrue.createdGateway == nil || !repoTrue.createdGateway.SyncMetadata {
+		t.Errorf("created gateway SyncMetadata = false, want true")
+	}
+	if resp.SyncMetadata == nil || !*resp.SyncMetadata {
+		t.Errorf("response SyncMetadata = %v, want true", resp.SyncMetadata)
+	}
+
+	// Default (false) when not requested.
+	repoFalse := &mockGatewayRepository{}
+	svc2 := &GatewayService{gatewayRepo: repoFalse, orgRepo: mockOrgRepo}
+	resp2, err := svc2.RegisterGateway(orgID, "sync-gw-2", "Sync GW2", "", "api.example.com",
+		false, constants.GatewayFunctionalityTypeRegular, "1.0", nil, false)
+	if err != nil {
+		t.Fatalf("RegisterGateway() error = %v", err)
+	}
+	if repoFalse.createdGateway == nil || repoFalse.createdGateway.SyncMetadata {
+		t.Errorf("created gateway SyncMetadata = true, want false")
+	}
+	if resp2.SyncMetadata == nil || *resp2.SyncMetadata {
+		t.Errorf("response SyncMetadata = %v, want false", resp2.SyncMetadata)
 	}
 }
 
@@ -150,7 +186,7 @@ func TestUpdateGatewayProperties(t *testing.T) {
 		}
 
 		newDescription := "New description"
-		response, err := service.UpdateGateway(gatewayID, orgID, &newDescription, nil, nil, nil)
+		response, err := service.UpdateGateway(gatewayID, orgID, &newDescription, nil, nil, nil, nil)
 		if err != nil {
 			t.Fatalf("UpdateGateway() error = %v", err)
 		}
@@ -188,7 +224,7 @@ func TestUpdateGatewayProperties(t *testing.T) {
 			"tier":   "premium",
 		}
 
-		response, err := service.UpdateGateway(gatewayID, orgID, nil, nil, nil, &newProperties)
+		response, err := service.UpdateGateway(gatewayID, orgID, nil, nil, nil, &newProperties, nil)
 		if err != nil {
 			t.Fatalf("UpdateGateway() error = %v", err)
 		}

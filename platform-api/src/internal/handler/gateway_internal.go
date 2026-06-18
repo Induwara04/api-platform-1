@@ -36,14 +36,17 @@ import (
 type GatewayInternalAPIHandler struct {
 	gatewayService         *service.GatewayService
 	gatewayInternalService *service.GatewayInternalAPIService
+	artifactImportService  *service.ArtifactImportService
 	slogger                *slog.Logger
 }
 
 func NewGatewayInternalAPIHandler(gatewayService *service.GatewayService,
-	gatewayInternalService *service.GatewayInternalAPIService, slogger *slog.Logger) *GatewayInternalAPIHandler {
+	gatewayInternalService *service.GatewayInternalAPIService,
+	artifactImportService *service.ArtifactImportService, slogger *slog.Logger) *GatewayInternalAPIHandler {
 	return &GatewayInternalAPIHandler{
 		gatewayService:         gatewayService,
 		gatewayInternalService: gatewayInternalService,
+		artifactImportService:  artifactImportService,
 		slogger:                slogger,
 	}
 }
@@ -130,68 +133,54 @@ func (h *GatewayInternalAPIHandler) GetAPI(c *gin.Context) {
 	c.Data(http.StatusOK, "application/zip", zipData)
 }
 
-// CreateGatewayDeployment handles POST /api/internal/v1/apis/{apiId}/gateway-deployments
-func (h *GatewayInternalAPIHandler) CreateGatewayDeployment(c *gin.Context) {
+// ImportGatewayArtifact handles POST /api/internal/v1/artifacts/import-gateway-artifact.
+// It is the generic DP->CP push endpoint: a gateway pushes any artifact kind
+// (REST API, LLM Provider, LLM Provider Template, LLM Proxy, MCP Proxy, ...) and the
+// control plane creates or updates it, marking it read-only with origin "DP".
+func (h *GatewayInternalAPIHandler) ImportGatewayArtifact(c *gin.Context) {
 	orgID, gatewayID, ok := h.authenticateRequest(c)
 	if !ok {
 		return
 	}
 
-	// Extract API ID from path parameter
-	apiID := c.Param("apiId")
-	if apiID == "" {
-		c.JSON(http.StatusBadRequest, utils.NewErrorResponse(400, "Bad Request",
-			"API ID is required"))
-		return
-	}
-
-	// Extract optional deployment ID from query parameter
-	deploymentID := c.Query("deploymentId")
-	var deploymentIDPtr *string
-	if deploymentID != "" {
-		deploymentIDPtr = &deploymentID
-	}
-
-	// Parse and validate request body
-	var notification dto.DeploymentNotification
-	if err := c.ShouldBindJSON(&notification); err != nil {
+	var req dto.ImportGatewayArtifactRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
 		clientIP := c.ClientIP()
-		h.slogger.Warn("Invalid request body", "clientIP", clientIP, "error", err)
+		h.slogger.Warn("Invalid import-gateway-artifact request body", "clientIP", clientIP, "error", err)
 		c.JSON(http.StatusBadRequest, utils.NewErrorResponse(400, "Bad Request",
 			"Invalid request body: "+err.Error()))
 		return
 	}
 
-	response, err := h.gatewayInternalService.CreateGatewayDeployment(
-		apiID, orgID, gatewayID, notification, deploymentIDPtr)
+	response, err := h.artifactImportService.Import(orgID, gatewayID, req)
 	if err != nil {
-		if errors.Is(err, constants.ErrInvalidInput) {
+		switch {
+		case errors.Is(err, constants.ErrArtifactInvalidKind):
 			c.JSON(http.StatusBadRequest, utils.NewErrorResponse(400, "Bad Request",
-				"Invalid input data"))
-			return
-		}
-		if errors.Is(err, constants.ErrGatewayNotFound) {
+				"Unsupported artifact kind: "+req.Configuration.Kind))
+		case errors.Is(err, constants.ErrInvalidInput):
+			c.JSON(http.StatusBadRequest, utils.NewErrorResponse(400, "Bad Request",
+				"Invalid input data: "+err.Error()))
+		case errors.Is(err, constants.ErrGatewayNotFound):
 			c.JSON(http.StatusNotFound, utils.NewErrorResponse(404, "Not Found",
 				"Gateway not found"))
-			return
-		}
-		if errors.Is(err, constants.ErrAPINotFound) {
+		case errors.Is(err, constants.ErrProjectNotFound):
 			c.JSON(http.StatusNotFound, utils.NewErrorResponse(404, "Not Found",
-				"API not found"))
-			return
+				"Project not found for the imported artifact"))
+		case errors.Is(err, constants.ErrArtifactExists):
+			c.JSON(http.StatusConflict, utils.NewErrorResponse(409, "Conflict", err.Error()))
+		default:
+			h.slogger.Error("Failed to import gateway artifact", "artifactID", req.ID,
+				"kind", req.Configuration.Kind, "gatewayID", gatewayID, "error", err)
+			c.JSON(http.StatusInternalServerError, utils.NewErrorResponse(500, "Internal Server Error",
+				"Failed to import gateway artifact"))
 		}
-		h.slogger.Error("Failed to create gateway API deployment", "apiID", apiID, "gatewayID", gatewayID, "error", err)
-		c.JSON(http.StatusInternalServerError, utils.NewErrorResponse(500, "Internal Server Error",
-			"Failed to create API deployment"))
 		return
 	}
 
-	h.slogger.Info("Successfully created gateway API deployment", "apiID", apiID, "gatewayID", gatewayID, "created", response.Created)
-
-	// Return success response
-	c.JSON(http.StatusCreated, map[string]interface{}{
-		"message": response.Message,
-	})
+	h.slogger.Info("Successfully imported gateway artifact", "artifactID", response.ID,
+		"kind", req.Configuration.Kind, "gatewayID", gatewayID, "status", response.Status)
+	c.JSON(http.StatusOK, response)
 }
 
 // GetLLMProvider handles GET /api/internal/v1/llm-providers/:providerId
@@ -810,7 +799,6 @@ func (h *GatewayInternalAPIHandler) RegisterRoutes(r *gin.Engine) {
 	{
 		orgGroup.GET("/api-keys", h.GetRestAPIAPIKeys)
 		orgGroup.GET("/:apiId", h.GetAPI)
-		orgGroup.POST("/:apiId/gateway-deployments", h.CreateGatewayDeployment)
 		orgGroup.GET("/:apiId/subscriptions", h.GetSubscriptions)
 	}
 
@@ -862,5 +850,8 @@ func (h *GatewayInternalAPIHandler) RegisterRoutes(r *gin.Engine) {
 	artifactGroup := r.Group("/api/internal/v1/artifacts")
 	{
 		artifactGroup.POST("/exists", h.CheckArtifactsExist)
+		// Generic DP->CP push endpoint replacing the legacy
+		// POST /apis/:apiId/gateway-deployments route.
+		artifactGroup.POST("/import-gateway-artifact", h.ImportGatewayArtifact)
 	}
 }

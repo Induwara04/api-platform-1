@@ -849,7 +849,7 @@ func (m *MockControlPlaneClient) IsConnected() bool {
 	return m.connected
 }
 
-func (m *MockControlPlaneClient) PushAPIDeployment(apiID string, cfg *models.StoredConfig, deploymentID string) error {
+func (m *MockControlPlaneClient) PushArtifact(apiID string, cfg *models.StoredConfig, deploymentID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.pushedIDs = append(m.pushedIDs, apiID)
