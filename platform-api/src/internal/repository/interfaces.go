@@ -52,6 +52,7 @@ type ArtifactRepository interface {
 	Update(tx *sql.Tx, artifact *model.Artifact) error
 	Exists(kind, handle, orgUUID string) (bool, error)
 	GetByHandle(handle, orgUUID string) (*model.Artifact, error)
+	GetByUUID(uuid, orgUUID string) (*model.Artifact, error)
 	CountByKindAndOrg(kind, orgUUID string) (int, error)
 	ExistsByUUIDs(uuids []string, orgUUID string) ([]string, error)
 }
@@ -131,6 +132,7 @@ type DeploymentRepository interface {
 	GetStaleTransitionalStatuses(timeout time.Duration) ([]StaleDeploymentStatus, error)
 	DeleteStatus(artifactUUID, orgUUID, gatewayID string) error
 	GetDeployedGatewayIDs(artifactUUID, orgUUID string) ([]string, error)
+	HasActiveDeployment(artifactUUID, orgUUID string) (bool, error)
 
 	// Gateway deployment methods
 	GetAllDeploymentsByGateway(gatewayID, orgUUID string, since *time.Time) ([]*model.DeploymentInfo, error)

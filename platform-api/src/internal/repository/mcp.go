@@ -73,6 +73,7 @@ func (r *MCPProxyRepo) Create(p *model.MCPProxy) error {
 		Version:          p.Version,
 		Kind:             constants.MCPProxy,
 		OrganizationUUID: p.OrganizationUUID,
+		Origin:           p.Origin,
 	}); err != nil {
 		return fmt.Errorf("failed to create artifact: %w", err)
 	}
@@ -100,7 +101,7 @@ func (r *MCPProxyRepo) Create(p *model.MCPProxy) error {
 func (r *MCPProxyRepo) GetByHandle(handle, orgUUID string) (*model.MCPProxy, error) {
 	query := `
 		SELECT
-			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
+			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.origin, a.created_at, a.updated_at,
 			p.project_uuid, p.description, p.created_by, p.status, p.configuration
 		FROM artifacts a
 		JOIN mcp_proxies p ON a.uuid = p.uuid
@@ -110,7 +111,7 @@ func (r *MCPProxyRepo) GetByHandle(handle, orgUUID string) (*model.MCPProxy, err
 	var p model.MCPProxy
 	var configurationJSON sql.NullString
 	if err := row.Scan(
-		&p.UUID, &p.Handle, &p.Name, &p.Version, &p.OrganizationUUID, &p.CreatedAt, &p.UpdatedAt,
+		&p.UUID, &p.Handle, &p.Name, &p.Version, &p.OrganizationUUID, &p.Origin, &p.CreatedAt, &p.UpdatedAt,
 		&p.ProjectUUID, &p.Description, &p.CreatedBy, &p.Status, &configurationJSON,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -134,7 +135,7 @@ func (r *MCPProxyRepo) GetByHandle(handle, orgUUID string) (*model.MCPProxy, err
 func (r *MCPProxyRepo) GetByUUID(uuid, orgUUID string) (*model.MCPProxy, error) {
 	query := `
 		SELECT
-			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
+			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.origin, a.created_at, a.updated_at,
 			p.project_uuid, p.description, p.created_by, p.status, p.configuration
 		FROM artifacts a
 		JOIN mcp_proxies p ON a.uuid = p.uuid
@@ -144,7 +145,7 @@ func (r *MCPProxyRepo) GetByUUID(uuid, orgUUID string) (*model.MCPProxy, error) 
 	var p model.MCPProxy
 	var configurationJSON sql.NullString
 	if err := row.Scan(
-		&p.UUID, &p.Handle, &p.Name, &p.Version, &p.OrganizationUUID, &p.CreatedAt, &p.UpdatedAt,
+		&p.UUID, &p.Handle, &p.Name, &p.Version, &p.OrganizationUUID, &p.Origin, &p.CreatedAt, &p.UpdatedAt,
 		&p.ProjectUUID, &p.Description, &p.CreatedBy, &p.Status, &configurationJSON,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -168,7 +169,7 @@ func (r *MCPProxyRepo) GetByUUID(uuid, orgUUID string) (*model.MCPProxy, error) 
 func (r *MCPProxyRepo) List(orgUUID string, limit, offset int) ([]*model.MCPProxy, error) {
 	query := `
 		SELECT
-			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
+			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.origin, a.created_at, a.updated_at,
 			p.project_uuid, p.description, p.created_by, p.status, p.configuration
 		FROM artifacts a
 		JOIN mcp_proxies p ON a.uuid = p.uuid
@@ -186,7 +187,7 @@ func (r *MCPProxyRepo) List(orgUUID string, limit, offset int) ([]*model.MCPProx
 		var p model.MCPProxy
 		var configurationJSON sql.NullString
 		err := rows.Scan(
-			&p.UUID, &p.Handle, &p.Name, &p.Version, &p.OrganizationUUID, &p.CreatedAt, &p.UpdatedAt,
+			&p.UUID, &p.Handle, &p.Name, &p.Version, &p.OrganizationUUID, &p.Origin, &p.CreatedAt, &p.UpdatedAt,
 			&p.ProjectUUID, &p.Description, &p.CreatedBy, &p.Status, &configurationJSON,
 		)
 		if err != nil {
@@ -213,7 +214,7 @@ func (r *MCPProxyRepo) Count(orgUUID string) (int, error) {
 func (r *MCPProxyRepo) ListByProject(orgUUID, projectUUID string) ([]*model.MCPProxy, error) {
 	query := `
 		SELECT
-			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
+			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.origin, a.created_at, a.updated_at,
 			p.project_uuid, p.description, p.created_by, p.status, p.configuration
 		FROM artifacts a
 		JOIN mcp_proxies p ON a.uuid = p.uuid
@@ -231,7 +232,7 @@ func (r *MCPProxyRepo) ListByProject(orgUUID, projectUUID string) ([]*model.MCPP
 		var p model.MCPProxy
 		var configurationJSON sql.NullString
 		err := rows.Scan(
-			&p.UUID, &p.Handle, &p.Name, &p.Version, &p.OrganizationUUID, &p.CreatedAt, &p.UpdatedAt,
+			&p.UUID, &p.Handle, &p.Name, &p.Version, &p.OrganizationUUID, &p.Origin, &p.CreatedAt, &p.UpdatedAt,
 			&p.ProjectUUID, &p.Description, &p.CreatedBy, &p.Status, &configurationJSON,
 		)
 		if err != nil {

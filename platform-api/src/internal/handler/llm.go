@@ -185,6 +185,9 @@ func (h *LLMHandler) UpdateLLMProviderTemplate(c *gin.Context) {
 
 	resp, err := h.templateService.Update(orgID, id, &req)
 	if err != nil {
+		if respondArtifactGuardError(c, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, constants.ErrLLMProviderTemplateNotFound):
 			c.JSON(http.StatusNotFound, utils.NewErrorResponse(404, "Not Found", "LLM provider template not found"))
@@ -210,6 +213,9 @@ func (h *LLMHandler) DeleteLLMProviderTemplate(c *gin.Context) {
 	id := c.Param("id")
 
 	if err := h.templateService.Delete(orgID, id); err != nil {
+		if respondArtifactGuardError(c, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, constants.ErrLLMProviderTemplateNotFound):
 			c.JSON(http.StatusNotFound, utils.NewErrorResponse(404, "Not Found", "LLM provider template not found"))
@@ -341,6 +347,9 @@ func (h *LLMHandler) UpdateLLMProvider(c *gin.Context) {
 
 	resp, err := h.providerService.Update(orgID, id, &req)
 	if err != nil {
+		if respondArtifactGuardError(c, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, constants.ErrLLMProviderNotFound):
 			c.JSON(http.StatusNotFound, utils.NewErrorResponse(404, "Not Found", "LLM provider not found"))
@@ -369,6 +378,9 @@ func (h *LLMHandler) DeleteLLMProvider(c *gin.Context) {
 	id := c.Param("id")
 
 	if err := h.providerService.Delete(orgID, id); err != nil {
+		if respondArtifactGuardError(c, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, constants.ErrLLMProviderNotFound):
 			c.JSON(http.StatusNotFound, utils.NewErrorResponse(404, "Not Found", "LLM provider not found"))
@@ -557,6 +569,9 @@ func (h *LLMHandler) UpdateLLMProxy(c *gin.Context) {
 
 	resp, err := h.proxyService.Update(orgID, id, &req)
 	if err != nil {
+		if respondArtifactGuardError(c, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, constants.ErrLLMProxyNotFound):
 			c.JSON(http.StatusNotFound, utils.NewErrorResponse(404, "Not Found", "LLM proxy not found"))
@@ -585,6 +600,9 @@ func (h *LLMHandler) DeleteLLMProxy(c *gin.Context) {
 	id := c.Param("id")
 
 	if err := h.proxyService.Delete(orgID, id); err != nil {
+		if respondArtifactGuardError(c, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, constants.ErrLLMProxyNotFound):
 			c.JSON(http.StatusNotFound, utils.NewErrorResponse(404, "Not Found", "LLM proxy not found"))

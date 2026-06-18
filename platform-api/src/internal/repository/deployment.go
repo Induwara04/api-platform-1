@@ -759,6 +759,23 @@ func (r *DeploymentRepo) GetDeploymentsWithState(artifactUUID, orgUUID string, g
 	return deployments, nil
 }
 
+// HasActiveDeployment reports whether the artifact has a DEPLOYED (or in-flight
+// DEPLOYING/UNDEPLOYING) status on any gateway. Used to gate deletion of
+// data-plane-originated artifacts, which may only be deleted once they are
+// undeployed on every gateway they were deployed to.
+func (r *DeploymentRepo) HasActiveDeployment(artifactUUID, orgUUID string) (bool, error) {
+	query := `
+		SELECT COUNT(*) FROM deployment_status
+		WHERE artifact_uuid = ? AND organization_uuid = ?
+		  AND status IN ('DEPLOYED', 'DEPLOYING', 'UNDEPLOYING')
+	`
+	var count int
+	if err := r.db.QueryRow(r.db.Rebind(query), artifactUUID, orgUUID).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // GetDeployedGatewayIDs returns the gateway IDs that have an active deployment status
 // (DEPLOYED or UNDEPLOYED) for the given artifact. Since the deployment_status table
 // only holds rows for those two states, a plain SELECT is sufficient.

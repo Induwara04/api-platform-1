@@ -130,6 +130,7 @@ func (s *MCPProxyService) Create(orgUUID, createdBy string, req *api.MCPProxy) (
 			Policies:     mapMCPPoliciesAPIToModel(req.Policies),
 			Capabilities: mapMcpCapabilitiesAPIToModel(req.Capabilities),
 		},
+		Origin: constants.OriginCP,
 	}
 
 	if err := s.repo.Create(m); err != nil {
@@ -242,6 +243,10 @@ func (s *MCPProxyService) Update(orgUUID, handle string, req *api.MCPProxy) (*ap
 	if existing == nil {
 		return nil, constants.ErrMCPProxyNotFound
 	}
+	// DP-originated artifacts are read-only in the control plane.
+	if err := ensureOriginMutable(existing.Origin); err != nil {
+		return nil, err
+	}
 
 	// Store existing upstream config for auth preservation
 	existingUpstreamConfig := existing.Configuration.Upstream
@@ -288,6 +293,11 @@ func (s *MCPProxyService) Delete(orgUUID, handle string) error {
 	}
 	if mcpProxy == nil {
 		return constants.ErrMCPProxyNotFound
+	}
+
+	// DP-originated artifacts may only be deleted once undeployed on all gateways.
+	if err := ensureOriginDeletable(s.deploymentRepo, mcpProxy.Origin, mcpProxy.UUID, orgUUID); err != nil {
+		return err
 	}
 
 	// Get all gateways in the organization to broadcast deletion event.
@@ -452,6 +462,7 @@ func mapMCPProxyModelToAPI(m *model.MCPProxy) *api.MCPProxy {
 		Upstream:       mapMCPUpstreamModelToAPI(&m.Configuration.Upstream),
 		Policies:       mapMCPPoliciesModelToAPI(m.Configuration.Policies),
 		Capabilities:   mapMcpCapabilitiesModelToAPI(m.Configuration.Capabilities),
+		ReadOnly:       utils.BoolPtr(m.Origin == constants.OriginDP),
 		CreatedAt:      utils.TimePtr(m.CreatedAt),
 		UpdatedAt:      utils.TimePtr(m.UpdatedAt),
 	}
@@ -474,6 +485,7 @@ func mapMCPProxyModelToListItem(m *model.MCPProxy) *api.MCPProxyListItem {
 		Context:        m.Configuration.Context,
 		McpSpecVersion: utils.StringPtrIfNotEmpty(m.Configuration.SpecVersion),
 		Status:         &status,
+		ReadOnly:       utils.BoolPtr(m.Origin == constants.OriginDP),
 		CreatedAt:      utils.TimePtr(m.CreatedAt),
 		UpdatedAt:      utils.TimePtr(m.UpdatedAt),
 	}

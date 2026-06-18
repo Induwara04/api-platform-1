@@ -101,6 +101,9 @@ func (h *MCPProxyDeploymentHandler) DeployMCPProxy(c *gin.Context) {
 
 	deployment, err := h.deploymentService.DeployMCPProxyByHandle(proxyId, &req, orgId)
 	if err != nil {
+		if respondArtifactGuardError(c, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, constants.ErrMCPProxyNotFound):
 			c.JSON(http.StatusNotFound, utils.NewErrorResponse(404, "Not Found",
@@ -172,6 +175,10 @@ func (h *MCPProxyDeploymentHandler) UndeployMCPProxyDeployment(c *gin.Context) {
 
 	deployment, err := h.deploymentService.UndeployDeploymentByHandle(proxyId, deploymentId, gatewayId, orgId)
 	if err != nil {
+		// DP-originated artifacts are read-only: undeployment cannot be initiated from the CP.
+		if respondArtifactGuardError(c, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, constants.ErrMCPProxyNotFound):
 			c.JSON(http.StatusNotFound, utils.NewErrorResponse(404, "Not Found",
@@ -234,6 +241,10 @@ func (h *MCPProxyDeploymentHandler) RestoreMCPProxyDeployment(c *gin.Context) {
 
 	deployment, err := h.deploymentService.RestoreMCPDeploymentByHandle(proxyId, deploymentId, gatewayId, orgId)
 	if err != nil {
+		// DP-originated artifacts are read-only: restore cannot be initiated from the CP.
+		if respondArtifactGuardError(c, err) {
+			return
+		}
 		switch {
 		case errors.Is(err, constants.ErrMCPProxyNotFound):
 			c.JSON(http.StatusNotFound, utils.NewErrorResponse(404, "Not Found",

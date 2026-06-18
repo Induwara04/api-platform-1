@@ -23,21 +23,24 @@ import (
 
 // API represents an API entity in the platform
 type API struct {
-	ID              string           `json:"id" db:"uuid"`
-	Handle          string           `json:"handle" db:"handle"`
-	Name            string           `json:"name" db:"name"`
-	Kind            string           `json:"kind" db:"kind"`
-	Description     string           `json:"description,omitempty" db:"description"`
-	Version         string           `json:"version" db:"version"`
-	CreatedBy       string           `json:"createdBy,omitempty" db:"created_by"`
-	ProjectID       string           `json:"projectId" db:"project_uuid"`           // FK to Project.ID
-	OrganizationID  string           `json:"organizationId" db:"organization_uuid"` // FK to Organization.ID
-	CreatedAt       time.Time        `json:"createdAt,omitempty" db:"created_at"`
-	UpdatedAt       time.Time        `json:"updatedAt,omitempty" db:"updated_at"`
-	LifeCycleStatus string          `json:"lifeCycleStatus,omitempty" db:"lifecycle_status"`
-	Transport       []string        `json:"transport,omitempty" db:"transport"`
-	Channels        []Channel       `json:"channels,omitempty"`
-	Configuration   RestAPIConfig    `json:"configuration" db:"-"`
+	ID              string        `json:"id" db:"uuid"`
+	Handle          string        `json:"handle" db:"handle"`
+	Name            string        `json:"name" db:"name"`
+	Kind            string        `json:"kind" db:"kind"`
+	Description     string        `json:"description,omitempty" db:"description"`
+	Version         string        `json:"version" db:"version"`
+	CreatedBy       string        `json:"createdBy,omitempty" db:"created_by"`
+	ProjectID       string        `json:"projectId" db:"project_uuid"`           // FK to Project.ID
+	OrganizationID  string        `json:"organizationId" db:"organization_uuid"` // FK to Organization.ID
+	CreatedAt       time.Time     `json:"createdAt,omitempty" db:"created_at"`
+	UpdatedAt       time.Time     `json:"updatedAt,omitempty" db:"updated_at"`
+	LifeCycleStatus string        `json:"lifeCycleStatus,omitempty" db:"lifecycle_status"`
+	Transport       []string      `json:"transport,omitempty" db:"transport"`
+	Channels        []Channel     `json:"channels,omitempty"`
+	Configuration   RestAPIConfig `json:"configuration" db:"-"`
+	// Origin carries the artifact origin ("CP" or "DP") into create. It is stored
+	// on the artifacts table, not rest_apis, so it is not scanned back here.
+	Origin string `json:"origin,omitempty" db:"-"`
 }
 
 type RestAPIConfig struct {

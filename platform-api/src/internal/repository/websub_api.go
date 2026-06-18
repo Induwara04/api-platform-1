@@ -78,6 +78,7 @@ func (r *WebSubAPIRepo) Create(a *model.WebSubAPI) error {
 		Version:          a.Version,
 		Kind:             constants.WebSubApi,
 		OrganizationUUID: a.OrganizationUUID,
+		Origin:           a.Origin,
 	}); err != nil {
 		return fmt.Errorf("failed to create artifact: %w", err)
 	}
@@ -106,7 +107,7 @@ func (r *WebSubAPIRepo) Create(a *model.WebSubAPI) error {
 func (r *WebSubAPIRepo) GetByHandle(handle, orgUUID string) (*model.WebSubAPI, error) {
 	query := `
 		SELECT
-			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
+			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.origin, a.created_at, a.updated_at,
 			p.project_uuid, p.description, p.created_by, p.lifecycle_status, p.transport, p.configuration
 		FROM artifacts a
 		JOIN websub_apis p ON a.uuid = p.uuid
@@ -119,7 +120,7 @@ func (r *WebSubAPIRepo) GetByHandle(handle, orgUUID string) (*model.WebSubAPI, e
 func (r *WebSubAPIRepo) GetByUUID(uuid, orgUUID string) (*model.WebSubAPI, error) {
 	query := `
 		SELECT
-			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
+			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.origin, a.created_at, a.updated_at,
 			p.project_uuid, p.description, p.created_by, p.lifecycle_status, p.transport, p.configuration
 		FROM artifacts a
 		JOIN websub_apis p ON a.uuid = p.uuid
@@ -136,7 +137,7 @@ func (r *WebSubAPIRepo) List(orgUUID, projectUUID string, limit, offset int) ([]
 	if projectUUID != "" {
 		query = `
 			SELECT
-				a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
+				a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.origin, a.created_at, a.updated_at,
 				p.project_uuid, p.description, p.created_by, p.lifecycle_status, p.transport, p.configuration
 			FROM artifacts a
 			JOIN websub_apis p ON a.uuid = p.uuid
@@ -147,7 +148,7 @@ func (r *WebSubAPIRepo) List(orgUUID, projectUUID string, limit, offset int) ([]
 	} else {
 		query = `
 			SELECT
-				a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
+				a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.origin, a.created_at, a.updated_at,
 				p.project_uuid, p.description, p.created_by, p.lifecycle_status, p.transport, p.configuration
 			FROM artifacts a
 			JOIN websub_apis p ON a.uuid = p.uuid
@@ -310,7 +311,7 @@ func (r *WebSubAPIRepo) scanWebSubAPI(row *sql.Row) (*model.WebSubAPI, error) {
 	var configurationJSON sql.NullString
 	var transportJSON sql.NullString
 	if err := row.Scan(
-		&a.UUID, &a.Handle, &a.Name, &a.Version, &a.OrganizationUUID, &a.CreatedAt, &a.UpdatedAt,
+		&a.UUID, &a.Handle, &a.Name, &a.Version, &a.OrganizationUUID, &a.Origin, &a.CreatedAt, &a.UpdatedAt,
 		&a.ProjectUUID, &a.Description, &a.CreatedBy, &a.LifeCycleStatus, &transportJSON, &configurationJSON,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -337,7 +338,7 @@ func (r *WebSubAPIRepo) scanWebSubAPIFromRows(rows *sql.Rows) (*model.WebSubAPI,
 	var configurationJSON sql.NullString
 	var transportJSON sql.NullString
 	if err := rows.Scan(
-		&a.UUID, &a.Handle, &a.Name, &a.Version, &a.OrganizationUUID, &a.CreatedAt, &a.UpdatedAt,
+		&a.UUID, &a.Handle, &a.Name, &a.Version, &a.OrganizationUUID, &a.Origin, &a.CreatedAt, &a.UpdatedAt,
 		&a.ProjectUUID, &a.Description, &a.CreatedBy, &a.LifeCycleStatus, &transportJSON, &configurationJSON,
 	); err != nil {
 		return nil, err

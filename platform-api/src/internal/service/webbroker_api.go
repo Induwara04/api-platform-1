@@ -148,6 +148,7 @@ func (s *WebBrokerAPIService) Create(orgUUID, createdBy string, req *api.WebBrok
 			AllChannels:       mapWebBrokerAllChannelPoliciesAPIToModel(req.AllChannels),
 			SubscriptionPlans: subscriptionPlans,
 		},
+		Origin: constants.OriginCP,
 	}
 
 	if err := s.repo.Create(m); err != nil {
@@ -230,6 +231,10 @@ func (s *WebBrokerAPIService) Update(orgUUID, handle string, req *api.WebBrokerA
 	if existing == nil {
 		return nil, constants.ErrWebBrokerAPINotFound
 	}
+	// DP-originated artifacts are read-only in the control plane.
+	if err := ensureOriginMutable(existing.Origin); err != nil {
+		return nil, err
+	}
 
 	transport := existing.Transport
 	if req.Transport != nil && len(*req.Transport) > 0 {
@@ -288,6 +293,10 @@ func (s *WebBrokerAPIService) Delete(orgUUID, handle string) error {
 	}
 	if webbrokerAPI == nil {
 		return constants.ErrWebBrokerAPINotFound
+	}
+	// DP-originated artifacts are read-only in the control plane and cannot be deleted from the CP.
+	if err := ensureOriginMutable(webbrokerAPI.Origin); err != nil {
+		return err
 	}
 
 	// Get all gateways in the organization to broadcast deletion event
@@ -420,6 +429,7 @@ func mapWebBrokerAPIModelToAPI(m *model.WebBrokerAPI, apiUtil *utils.APIUtil) *a
 		Channels:          mapWebBrokerChannelsModelToAPI(m.Configuration.Channels),
 		AllChannels:       mapWebBrokerAllChannelPoliciesModelToAPI(m.Configuration.AllChannels),
 		SubscriptionPlans: subscriptionPlans,
+		ReadOnly:          utils.BoolPtr(m.Origin == constants.OriginDP),
 		CreatedAt:         utils.TimePtr(m.CreatedAt),
 		UpdatedAt:         utils.TimePtr(m.UpdatedAt),
 	}
@@ -620,6 +630,7 @@ func mapWebBrokerAPIModelToListItem(m *model.WebBrokerAPI) *api.WebBrokerAPIList
 		ProjectId:       utils.StringPtrIfNotEmpty(m.ProjectUUID),
 		Context:         m.Configuration.Context,
 		LifeCycleStatus: &lifeCycleStatus,
+		ReadOnly:        utils.BoolPtr(m.Origin == constants.OriginDP),
 		CreatedAt:       utils.TimePtr(m.CreatedAt),
 		UpdatedAt:       utils.TimePtr(m.UpdatedAt),
 	}

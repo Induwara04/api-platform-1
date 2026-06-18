@@ -151,6 +151,12 @@ func (s *LLMProviderDeploymentService) DeployLLMProvider(providerID string, req 
 		return nil, constants.ErrLLMProviderNotFound
 	}
 
+	// DP-originated artifacts are read-only in the control plane and cannot be
+	// (re)deployed from the CP.
+	if err := ensureOriginMutable(provider.Origin); err != nil {
+		return nil, err
+	}
+
 	// Validate deployment name is provided
 	if req.Name == "" {
 		return nil, constants.ErrDeploymentNameRequired
@@ -259,6 +265,10 @@ func (s *LLMProviderDeploymentService) RestoreLLMProviderDeployment(providerID, 
 	if provider == nil {
 		return nil, constants.ErrLLMProviderNotFound
 	}
+	// DP-originated artifacts are read-only in the control plane; restore cannot be CP-initiated.
+	if err := ensureOriginMutable(provider.Origin); err != nil {
+		return nil, err
+	}
 
 	targetDeployment, err := s.deploymentRepo.GetWithContent(deploymentID, provider.UUID, orgUUID)
 	if err != nil {
@@ -336,6 +346,12 @@ func (s *LLMProviderDeploymentService) UndeployLLMProviderDeployment(providerID,
 	}
 	if provider == nil {
 		return nil, constants.ErrLLMProviderNotFound
+	}
+	// DP-originated artifacts are read-only in the control plane: their deploy/undeploy
+	// lifecycle is owned by the data-plane gateway, so undeployment cannot be initiated
+	// from the control plane.
+	if err := ensureOriginMutable(provider.Origin); err != nil {
+		return nil, err
 	}
 
 	deployment, err := s.deploymentRepo.GetWithState(deploymentID, provider.UUID, orgUUID)
@@ -1247,6 +1263,12 @@ func (s *LLMProxyDeploymentService) DeployLLMProxy(proxyID string, req *api.Depl
 		return nil, constants.ErrLLMProxyNotFound
 	}
 
+	// DP-originated artifacts are read-only in the control plane and cannot be
+	// (re)deployed from the CP.
+	if err := ensureOriginMutable(proxy.Origin); err != nil {
+		return nil, err
+	}
+
 	// Validate deployment name is provided
 	if req.Name == "" {
 		return nil, constants.ErrDeploymentNameRequired
@@ -1351,6 +1373,10 @@ func (s *LLMProxyDeploymentService) RestoreLLMProxyDeployment(proxyID, deploymen
 	if proxy == nil {
 		return nil, constants.ErrLLMProxyNotFound
 	}
+	// DP-originated artifacts are read-only in the control plane; restore cannot be CP-initiated.
+	if err := ensureOriginMutable(proxy.Origin); err != nil {
+		return nil, err
+	}
 
 	targetDeployment, err := s.deploymentRepo.GetWithContent(deploymentID, proxy.UUID, orgUUID)
 	if err != nil {
@@ -1428,6 +1454,12 @@ func (s *LLMProxyDeploymentService) UndeployLLMProxyDeployment(proxyID, deployme
 	}
 	if proxy == nil {
 		return nil, constants.ErrLLMProxyNotFound
+	}
+	// DP-originated artifacts are read-only in the control plane: their deploy/undeploy
+	// lifecycle is owned by the data-plane gateway, so undeployment cannot be initiated
+	// from the control plane.
+	if err := ensureOriginMutable(proxy.Origin); err != nil {
+		return nil, err
 	}
 
 	deployment, err := s.deploymentRepo.GetWithState(deploymentID, proxy.UUID, orgUUID)

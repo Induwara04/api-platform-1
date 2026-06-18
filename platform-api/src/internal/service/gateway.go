@@ -487,7 +487,7 @@ const defaultGatewayVersion = "1.0"
 
 // RegisterGateway registers a new gateway with organization validation
 func (s *GatewayService) RegisterGateway(orgID, name, displayName, description, vhost string, isCritical bool,
-	functionalityType, version string, properties map[string]interface{}) (*api.GatewayResponse, error) {
+	functionalityType, version string, properties map[string]interface{}, syncMetadata bool) (*api.GatewayResponse, error) {
 	// 1. Validate inputs
 	if err := s.validateGatewayInput(orgID, name, displayName, vhost, functionalityType); err != nil {
 		return nil, err
@@ -544,6 +544,7 @@ func (s *GatewayService) RegisterGateway(orgID, name, displayName, description, 
 		IsCritical:        isCritical,
 		FunctionalityType: functionalityType,
 		Version:           version,
+		SyncMetadata:      syncMetadata,
 		CreatedAt:         time.Now(),
 		UpdatedAt:         time.Now(),
 	}
@@ -618,7 +619,7 @@ func (s *GatewayService) GetGateway(gatewayId, orgId string) (*api.GatewayRespon
 
 // UpdateGateway updates gateway details
 func (s *GatewayService) UpdateGateway(gatewayId, orgId string, description, displayName *string,
-	isCritical *bool, properties *map[string]interface{}) (*api.GatewayResponse, error) {
+	isCritical *bool, properties *map[string]interface{}, syncMetadata *bool) (*api.GatewayResponse, error) {
 	// Get existing gateway
 	gateway, err := s.gatewayRepo.GetByUUID(gatewayId)
 	if err != nil {
@@ -642,6 +643,9 @@ func (s *GatewayService) UpdateGateway(gatewayId, orgId string, description, dis
 	}
 	if properties != nil {
 		gateway.Properties = *properties
+	}
+	if syncMetadata != nil {
+		gateway.SyncMetadata = *syncMetadata
 	}
 	gateway.UpdatedAt = time.Now()
 
@@ -1064,6 +1068,7 @@ func gatewayModelToAPI(gateway *model.Gateway) *api.GatewayResponse {
 		FunctionalityType: &functionalityType,
 		Version:           &gateway.Version,
 		IsActive:          &gateway.IsActive,
+		SyncMetadata:      &gateway.SyncMetadata,
 		CreatedAt:         &gateway.CreatedAt,
 		UpdatedAt:         &gateway.UpdatedAt,
 	}

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"strings"
 
+	"platform-api/src/internal/constants"
 	"platform-api/src/internal/database"
 	"platform-api/src/internal/model"
 	"time"
@@ -37,11 +38,15 @@ func NewArtifactRepo(db *database.DB) *ArtifactRepo {
 
 func (r *ArtifactRepo) Create(tx *sql.Tx, artifact *model.Artifact) error {
 	now := time.Now().UTC()
+	origin := artifact.Origin
+	if origin == "" {
+		origin = constants.OriginCP
+	}
 	query := `
-		INSERT INTO artifacts (uuid, handle, name, version, kind, organization_uuid, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO artifacts (uuid, handle, name, version, kind, organization_uuid, origin, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
-	_, err := tx.Exec(r.db.Rebind(query), artifact.UUID, artifact.Handle, artifact.Name, artifact.Version, artifact.Kind, artifact.OrganizationUUID, now, now)
+	_, err := tx.Exec(r.db.Rebind(query), artifact.UUID, artifact.Handle, artifact.Name, artifact.Version, artifact.Kind, artifact.OrganizationUUID, origin, now, now)
 	return err
 }
 
@@ -82,10 +87,28 @@ func (r *ArtifactRepo) Exists(kind, handle, orgUUID string) (bool, error) {
 
 func (r *ArtifactRepo) GetByHandle(handle, orgUUID string) (*model.Artifact, error) {
 	artifact := &model.Artifact{}
-	query := `SELECT uuid, handle, name, version, kind, organization_uuid, created_at, updated_at FROM artifacts WHERE handle = ? AND organization_uuid = ?`
+	query := `SELECT uuid, handle, name, version, kind, organization_uuid, origin, created_at, updated_at FROM artifacts WHERE handle = ? AND organization_uuid = ?`
 	err := r.db.QueryRow(r.db.Rebind(query), handle, orgUUID).Scan(
 		&artifact.UUID, &artifact.Handle, &artifact.Name, &artifact.Version,
-		&artifact.Kind, &artifact.OrganizationUUID, &artifact.CreatedAt, &artifact.UpdatedAt)
+		&artifact.Kind, &artifact.OrganizationUUID, &artifact.Origin, &artifact.CreatedAt, &artifact.UpdatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return artifact, nil
+}
+
+// GetByUUID returns the artifact identified by uuid within the organization,
+// including its kind and origin. Returns (nil, nil) when not found. Used by the
+// gateway-artifact import flow which keys on the data-plane-supplied UUID.
+func (r *ArtifactRepo) GetByUUID(uuid, orgUUID string) (*model.Artifact, error) {
+	artifact := &model.Artifact{}
+	query := `SELECT uuid, handle, name, version, kind, organization_uuid, origin, created_at, updated_at FROM artifacts WHERE uuid = ? AND organization_uuid = ?`
+	err := r.db.QueryRow(r.db.Rebind(query), uuid, orgUUID).Scan(
+		&artifact.UUID, &artifact.Handle, &artifact.Name, &artifact.Version,
+		&artifact.Kind, &artifact.OrganizationUUID, &artifact.Origin, &artifact.CreatedAt, &artifact.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil

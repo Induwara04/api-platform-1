@@ -36,13 +36,13 @@ type LLMProviderTemplateRepo struct {
 }
 
 type llmProviderTemplateConfig struct {
-	Metadata         *model.LLMProviderTemplateMetadata `json:"metadata,omitempty"`
-	PromptTokens     *model.ExtractionIdentifier        `json:"promptTokens,omitempty"`
-	CompletionTokens *model.ExtractionIdentifier        `json:"completionTokens,omitempty"`
-	TotalTokens      *model.ExtractionIdentifier        `json:"totalTokens,omitempty"`
-	RemainingTokens  *model.ExtractionIdentifier        `json:"remainingTokens,omitempty"`
-	RequestModel     *model.ExtractionIdentifier        `json:"requestModel,omitempty"`
-	ResponseModel    *model.ExtractionIdentifier        `json:"responseModel,omitempty"`
+	Metadata         *model.LLMProviderTemplateMetadata         `json:"metadata,omitempty"`
+	PromptTokens     *model.ExtractionIdentifier                `json:"promptTokens,omitempty"`
+	CompletionTokens *model.ExtractionIdentifier                `json:"completionTokens,omitempty"`
+	TotalTokens      *model.ExtractionIdentifier                `json:"totalTokens,omitempty"`
+	RemainingTokens  *model.ExtractionIdentifier                `json:"remainingTokens,omitempty"`
+	RequestModel     *model.ExtractionIdentifier                `json:"requestModel,omitempty"`
+	ResponseModel    *model.ExtractionIdentifier                `json:"responseModel,omitempty"`
 	ResourceMappings *model.LLMProviderTemplateResourceMappings `json:"resourceMappings,omitempty"`
 }
 
@@ -76,13 +76,13 @@ func (r *LLMProviderTemplateRepo) Create(t *model.LLMProviderTemplate) error {
 	query := `
 		INSERT INTO llm_provider_templates (
 			uuid, organization_uuid, handle, name, description, created_by,
-			configuration, created_at, updated_at
+			origin, configuration, created_at, updated_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	_, err = r.db.Exec(r.db.Rebind(query),
 		t.UUID, t.OrganizationUUID, t.ID, t.Name, t.Description, t.CreatedBy,
-		string(configJSON),
+		t.Origin, string(configJSON),
 		t.CreatedAt, t.UpdatedAt,
 	)
 	return err
@@ -90,7 +90,7 @@ func (r *LLMProviderTemplateRepo) Create(t *model.LLMProviderTemplate) error {
 
 func (r *LLMProviderTemplateRepo) GetByID(templateID, orgUUID string) (*model.LLMProviderTemplate, error) {
 	row := r.db.QueryRow(r.db.Rebind(`
-		SELECT uuid, organization_uuid, handle, name, description, created_by, configuration, created_at, updated_at
+		SELECT uuid, organization_uuid, handle, name, description, created_by, origin, configuration, created_at, updated_at
 		FROM llm_provider_templates
 		WHERE handle = ? AND organization_uuid = ?
 	`), templateID, orgUUID)
@@ -98,7 +98,7 @@ func (r *LLMProviderTemplateRepo) GetByID(templateID, orgUUID string) (*model.LL
 	var t model.LLMProviderTemplate
 	var configJSON sql.NullString
 	if err := row.Scan(
-		&t.UUID, &t.OrganizationUUID, &t.ID, &t.Name, &t.Description, &t.CreatedBy, &configJSON,
+		&t.UUID, &t.OrganizationUUID, &t.ID, &t.Name, &t.Description, &t.CreatedBy, &t.Origin, &configJSON,
 		&t.CreatedAt, &t.UpdatedAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -127,7 +127,7 @@ func (r *LLMProviderTemplateRepo) GetByID(templateID, orgUUID string) (*model.LL
 
 func (r *LLMProviderTemplateRepo) GetByUUID(uuid, orgUUID string) (*model.LLMProviderTemplate, error) {
 	row := r.db.QueryRow(r.db.Rebind(`
-		SELECT uuid, organization_uuid, handle, name, description, created_by, configuration, created_at, updated_at
+		SELECT uuid, organization_uuid, handle, name, description, created_by, origin, configuration, created_at, updated_at
 		FROM llm_provider_templates
 		WHERE uuid = ? AND organization_uuid = ?
 	`), uuid, orgUUID)
@@ -135,7 +135,7 @@ func (r *LLMProviderTemplateRepo) GetByUUID(uuid, orgUUID string) (*model.LLMPro
 	var t model.LLMProviderTemplate
 	var configJSON sql.NullString
 	if err := row.Scan(
-		&t.UUID, &t.OrganizationUUID, &t.ID, &t.Name, &t.Description, &t.CreatedBy, &configJSON,
+		&t.UUID, &t.OrganizationUUID, &t.ID, &t.Name, &t.Description, &t.CreatedBy, &t.Origin, &configJSON,
 		&t.CreatedAt, &t.UpdatedAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -164,7 +164,7 @@ func (r *LLMProviderTemplateRepo) GetByUUID(uuid, orgUUID string) (*model.LLMPro
 
 func (r *LLMProviderTemplateRepo) List(orgUUID string, limit, offset int) ([]*model.LLMProviderTemplate, error) {
 	rows, err := r.db.Query(r.db.Rebind(`
-		SELECT uuid, organization_uuid, handle, name, description, created_by, configuration, created_at, updated_at
+		SELECT uuid, organization_uuid, handle, name, description, created_by, origin, configuration, created_at, updated_at
 		FROM llm_provider_templates
 		WHERE organization_uuid = ?
 		ORDER BY created_at DESC
@@ -180,7 +180,7 @@ func (r *LLMProviderTemplateRepo) List(orgUUID string, limit, offset int) ([]*mo
 		var t model.LLMProviderTemplate
 		var configJSON sql.NullString
 		err := rows.Scan(
-			&t.UUID, &t.OrganizationUUID, &t.ID, &t.Name, &t.Description, &t.CreatedBy, &configJSON,
+			&t.UUID, &t.OrganizationUUID, &t.ID, &t.Name, &t.Description, &t.CreatedBy, &t.Origin, &configJSON,
 			&t.CreatedAt, &t.UpdatedAt,
 		)
 		if err != nil {
@@ -319,6 +319,7 @@ func (r *LLMProviderRepo) Create(p *model.LLMProvider) error {
 		Version:          p.Version,
 		Kind:             constants.LLMProvider,
 		OrganizationUUID: p.OrganizationUUID,
+		Origin:           p.Origin,
 	}); err != nil {
 		return fmt.Errorf("failed to create artifact: %w", err)
 	}
@@ -351,7 +352,7 @@ func (r *LLMProviderRepo) Create(p *model.LLMProvider) error {
 func (r *LLMProviderRepo) GetByID(providerID, orgUUID string) (*model.LLMProvider, error) {
 	query := `
 		SELECT
-			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
+			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.origin, a.created_at, a.updated_at,
 			p.description, p.created_by, p.template_uuid, p.openapi_spec, p.model_list, p.status, p.configuration
 		FROM artifacts a
 		JOIN llm_providers p ON a.uuid = p.uuid
@@ -362,7 +363,7 @@ func (r *LLMProviderRepo) GetByID(providerID, orgUUID string) (*model.LLMProvide
 	var openAPISpec, modelProvidersRaw sql.NullString
 	var configurationJSON sql.NullString
 	if err := row.Scan(
-		&p.UUID, &p.ID, &p.Name, &p.Version, &p.OrganizationUUID, &p.CreatedAt, &p.UpdatedAt,
+		&p.UUID, &p.ID, &p.Name, &p.Version, &p.OrganizationUUID, &p.Origin, &p.CreatedAt, &p.UpdatedAt,
 		&p.Description, &p.CreatedBy, &p.TemplateUUID, &openAPISpec, &modelProvidersRaw, &p.Status, &configurationJSON,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -394,7 +395,7 @@ func (r *LLMProviderRepo) GetByID(providerID, orgUUID string) (*model.LLMProvide
 func (r *LLMProviderRepo) List(orgUUID string, limit, offset int) ([]*model.LLMProvider, error) {
 	query := `
 		SELECT
-			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
+			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.origin, a.created_at, a.updated_at,
 			p.description, p.created_by, p.template_uuid, p.openapi_spec, p.model_list, p.status, p.configuration
 		FROM artifacts a
 		JOIN llm_providers p ON a.uuid = p.uuid
@@ -413,7 +414,7 @@ func (r *LLMProviderRepo) List(orgUUID string, limit, offset int) ([]*model.LLMP
 		var openAPISpec, modelProvidersRaw sql.NullString
 		var configurationJSON sql.NullString
 		err := rows.Scan(
-			&p.UUID, &p.ID, &p.Name, &p.Version, &p.OrganizationUUID, &p.CreatedAt, &p.UpdatedAt,
+			&p.UUID, &p.ID, &p.Name, &p.Version, &p.OrganizationUUID, &p.Origin, &p.CreatedAt, &p.UpdatedAt,
 			&p.Description, &p.CreatedBy, &p.TemplateUUID, &openAPISpec, &modelProvidersRaw, &p.Status, &configurationJSON,
 		)
 		if err != nil {
@@ -591,6 +592,7 @@ func (r *LLMProxyRepo) Create(p *model.LLMProxy) error {
 		Version:          p.Version,
 		Kind:             constants.LLMProxy,
 		OrganizationUUID: p.OrganizationUUID,
+		Origin:           p.Origin,
 	}); err != nil {
 		return fmt.Errorf("failed to create artifact: %w", err)
 	}
@@ -618,7 +620,7 @@ func (r *LLMProxyRepo) Create(p *model.LLMProxy) error {
 func (r *LLMProxyRepo) GetByID(proxyID, orgUUID string) (*model.LLMProxy, error) {
 	query := `
 		SELECT
-			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
+			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.origin, a.created_at, a.updated_at,
 			p.project_uuid, p.description, p.created_by, p.provider_uuid, p.openapi_spec, p.status, p.configuration
 		FROM artifacts a
 		JOIN llm_proxies p ON a.uuid = p.uuid
@@ -628,7 +630,7 @@ func (r *LLMProxyRepo) GetByID(proxyID, orgUUID string) (*model.LLMProxy, error)
 	var p model.LLMProxy
 	var openAPISpec, configurationJSON sql.NullString
 	if err := row.Scan(
-		&p.UUID, &p.ID, &p.Name, &p.Version, &p.OrganizationUUID, &p.CreatedAt, &p.UpdatedAt,
+		&p.UUID, &p.ID, &p.Name, &p.Version, &p.OrganizationUUID, &p.Origin, &p.CreatedAt, &p.UpdatedAt,
 		&p.ProjectUUID, &p.Description, &p.CreatedBy, &p.ProviderUUID,
 		&openAPISpec, &p.Status, &configurationJSON,
 	); err != nil {
@@ -655,7 +657,7 @@ func (r *LLMProxyRepo) GetByID(proxyID, orgUUID string) (*model.LLMProxy, error)
 func (r *LLMProxyRepo) List(orgUUID string, limit, offset int) ([]*model.LLMProxy, error) {
 	query := `
 		SELECT
-			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
+			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.origin, a.created_at, a.updated_at,
 			p.project_uuid, p.description, p.created_by, p.provider_uuid,
 			p.openapi_spec, p.status, p.configuration
 		FROM artifacts a
@@ -674,7 +676,7 @@ func (r *LLMProxyRepo) List(orgUUID string, limit, offset int) ([]*model.LLMProx
 		var p model.LLMProxy
 		var openAPISpec, configurationJSON sql.NullString
 		err := rows.Scan(
-			&p.UUID, &p.ID, &p.Name, &p.Version, &p.OrganizationUUID, &p.CreatedAt, &p.UpdatedAt,
+			&p.UUID, &p.ID, &p.Name, &p.Version, &p.OrganizationUUID, &p.Origin, &p.CreatedAt, &p.UpdatedAt,
 			&p.ProjectUUID, &p.Description, &p.CreatedBy, &p.ProviderUUID,
 			&openAPISpec, &p.Status, &configurationJSON,
 		)
@@ -699,7 +701,7 @@ func (r *LLMProxyRepo) List(orgUUID string, limit, offset int) ([]*model.LLMProx
 func (r *LLMProxyRepo) ListByProject(orgUUID, projectUUID string, limit, offset int) ([]*model.LLMProxy, error) {
 	query := `
 		SELECT
-			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
+			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.origin, a.created_at, a.updated_at,
 			p.project_uuid, p.description, p.created_by, p.provider_uuid,
 			p.openapi_spec, p.status, p.configuration
 		FROM artifacts a
@@ -718,7 +720,7 @@ func (r *LLMProxyRepo) ListByProject(orgUUID, projectUUID string, limit, offset 
 		var p model.LLMProxy
 		var openAPISpec, configurationJSON sql.NullString
 		err := rows.Scan(
-			&p.UUID, &p.ID, &p.Name, &p.Version, &p.OrganizationUUID, &p.CreatedAt, &p.UpdatedAt,
+			&p.UUID, &p.ID, &p.Name, &p.Version, &p.OrganizationUUID, &p.Origin, &p.CreatedAt, &p.UpdatedAt,
 			&p.ProjectUUID, &p.Description, &p.CreatedBy, &p.ProviderUUID,
 			&openAPISpec, &p.Status, &configurationJSON,
 		)
@@ -743,7 +745,7 @@ func (r *LLMProxyRepo) ListByProject(orgUUID, projectUUID string, limit, offset 
 func (r *LLMProxyRepo) ListByProvider(orgUUID, providerUUID string, limit, offset int) ([]*model.LLMProxy, error) {
 	query := `
 		SELECT
-			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
+			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.origin, a.created_at, a.updated_at,
 			p.project_uuid, p.description, p.created_by, p.provider_uuid,
 			p.openapi_spec, p.status, p.configuration
 		FROM artifacts a
@@ -762,7 +764,7 @@ func (r *LLMProxyRepo) ListByProvider(orgUUID, providerUUID string, limit, offse
 		var p model.LLMProxy
 		var openAPISpec, configurationJSON sql.NullString
 		err := rows.Scan(
-			&p.UUID, &p.ID, &p.Name, &p.Version, &p.OrganizationUUID, &p.CreatedAt, &p.UpdatedAt,
+			&p.UUID, &p.ID, &p.Name, &p.Version, &p.OrganizationUUID, &p.Origin, &p.CreatedAt, &p.UpdatedAt,
 			&p.ProjectUUID, &p.Description, &p.CreatedBy, &p.ProviderUUID,
 			&openAPISpec, &p.Status, &configurationJSON,
 		)

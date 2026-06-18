@@ -137,6 +137,7 @@ func (s *LLMProviderTemplateService) Create(orgUUID, createdBy string, req *api.
 		RemainingTokens:  mapExtractionIdentifierAPI(req.RemainingTokens),
 		RequestModel:     mapExtractionIdentifierAPI(req.RequestModel),
 		ResponseModel:    mapExtractionIdentifierAPI(req.ResponseModel),
+		Origin:           constants.OriginCP,
 	}
 	resourceMappings, err := mapTemplateResourceMappingsAPI(req.ResourceMappings)
 	if err != nil {
@@ -182,6 +183,7 @@ func (s *LLMProviderTemplateService) List(orgUUID string, limit, offset int) (*a
 			Name:        &name,
 			Description: desc,
 			CreatedBy:   createdBy,
+			ReadOnly:    utils.BoolPtr(t.Origin == constants.OriginDP),
 			CreatedAt:   utils.TimePtr(t.CreatedAt),
 			UpdatedAt:   utils.TimePtr(t.UpdatedAt),
 		})
@@ -212,6 +214,18 @@ func (s *LLMProviderTemplateService) Update(orgUUID, handle string, req *api.LLM
 	}
 	if req.Name == "" {
 		return nil, constants.ErrInvalidInput
+	}
+
+	// DP-originated templates are read-only in the control plane.
+	existingTmpl, err := s.repo.GetByID(handle, orgUUID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load template: %w", err)
+	}
+	if existingTmpl == nil {
+		return nil, constants.ErrLLMProviderTemplateNotFound
+	}
+	if err := ensureOriginMutable(existingTmpl.Origin); err != nil {
+		return nil, err
 	}
 
 	m := &model.LLMProviderTemplate{
@@ -346,6 +360,7 @@ func (s *LLMProviderService) Create(orgUUID, createdBy string, req *api.LLMProvi
 			Policies:      mapPoliciesAPIToModel(req.Policies),
 			Security:      mapSecurityAPIToModel(req.Security),
 		},
+		Origin: constants.OriginCP,
 	}
 
 	if err := s.repo.Create(m); err != nil {
@@ -410,6 +425,7 @@ func (s *LLMProviderService) List(orgUUID string, limit, offset int) (*api.LLMPr
 			Version:     &version,
 			Template:    template,
 			Status:      &status,
+			ReadOnly:    utils.BoolPtr(p.Origin == constants.OriginDP),
 			CreatedAt:   utils.TimePtr(p.CreatedAt),
 			UpdatedAt:   utils.TimePtr(p.UpdatedAt),
 		})
@@ -456,6 +472,10 @@ func (s *LLMProviderService) Update(orgUUID, handle string, req *api.LLMProvider
 	}
 	if existing == nil {
 		return nil, constants.ErrLLMProviderNotFound
+	}
+	// DP-originated artifacts are read-only in the control plane.
+	if err := ensureOriginMutable(existing.Origin); err != nil {
+		return nil, err
 	}
 	if req.Name == "" || req.Version == "" || req.Template == "" {
 		return nil, constants.ErrInvalidInput
@@ -534,6 +554,11 @@ func (s *LLMProviderService) Delete(orgUUID, handle string) error {
 	}
 	if provider == nil {
 		return constants.ErrLLMProviderNotFound
+	}
+
+	// DP-originated artifacts may only be deleted once undeployed on all gateways.
+	if err := ensureOriginDeletable(s.deploymentRepo, provider.Origin, provider.UUID, orgUUID); err != nil {
+		return err
 	}
 
 	// Get all gateways in the organization to broadcast deletion event.
@@ -637,6 +662,7 @@ func (s *LLMProxyService) Create(orgUUID, createdBy string, req *api.LLMProxy) (
 			Policies:     mapPoliciesAPIToModel(req.Policies),
 			Security:     mapSecurityAPIToModel(req.Security),
 		},
+		Origin: constants.OriginCP,
 	}
 
 	if err := s.repo.Create(m); err != nil {
@@ -719,6 +745,7 @@ func (s *LLMProxyService) List(orgUUID string, projectUUID *string, limit, offse
 			ProjectId:   &projectID,
 			Provider:    &provider,
 			Status:      &status,
+			ReadOnly:    utils.BoolPtr(p.Origin == constants.OriginDP),
 			CreatedAt:   utils.TimePtr(p.CreatedAt),
 			UpdatedAt:   utils.TimePtr(p.UpdatedAt),
 		})
@@ -782,6 +809,7 @@ func (s *LLMProxyService) ListByProvider(orgUUID, providerID string, limit, offs
 			ProjectId:   &projectID,
 			Provider:    &provider,
 			Status:      &status,
+			ReadOnly:    utils.BoolPtr(p.Origin == constants.OriginDP),
 			CreatedAt:   utils.TimePtr(p.CreatedAt),
 			UpdatedAt:   utils.TimePtr(p.UpdatedAt),
 		})
@@ -820,6 +848,10 @@ func (s *LLMProxyService) Update(orgUUID, handle string, req *api.LLMProxy) (*ap
 	}
 	if existing == nil {
 		return nil, constants.ErrLLMProxyNotFound
+	}
+	// DP-originated artifacts are read-only in the control plane.
+	if err := ensureOriginMutable(existing.Origin); err != nil {
+		return nil, err
 	}
 
 	// Validate provider exists
@@ -882,6 +914,11 @@ func (s *LLMProxyService) Delete(orgUUID, handle string) error {
 	}
 	if proxy == nil {
 		return constants.ErrLLMProxyNotFound
+	}
+
+	// DP-originated artifacts may only be deleted once undeployed on all gateways.
+	if err := ensureOriginDeletable(s.deploymentRepo, proxy.Origin, proxy.UUID, orgUUID); err != nil {
+		return err
 	}
 
 	// Get all gateways in the organization to broadcast deletion event.
@@ -1334,6 +1371,7 @@ func mapTemplateModelToAPI(m *model.LLMProviderTemplate) *api.LLMProviderTemplat
 		RequestModel:     mapExtractionIdentifierModelToAPI(m.RequestModel),
 		ResponseModel:    mapExtractionIdentifierModelToAPI(m.ResponseModel),
 		ResourceMappings: mapTemplateResourceMappingsModelToAPI(m.ResourceMappings),
+		ReadOnly:         utils.BoolPtr(m.Origin == constants.OriginDP),
 		CreatedAt:        utils.TimePtr(m.CreatedAt),
 		UpdatedAt:        utils.TimePtr(m.UpdatedAt),
 	}
@@ -1530,6 +1568,7 @@ func mapProviderModelToAPI(m *model.LLMProvider, templateHandle string) *api.LLM
 		AccessControl:  ac,
 		Policies:       policies,
 		Security:       mapSecurityModelToAPI(m.Configuration.Security),
+		ReadOnly:       utils.BoolPtr(m.Origin == constants.OriginDP),
 		CreatedAt:      utils.TimePtr(m.CreatedAt),
 		UpdatedAt:      utils.TimePtr(m.UpdatedAt),
 	}
@@ -1842,6 +1881,7 @@ func mapProxyModelToAPI(m *model.LLMProxy) *api.LLMProxy {
 		},
 		Openapi:   utils.StringPtrIfNotEmpty(m.OpenAPISpec),
 		Security:  mapSecurityModelToAPI(m.Configuration.Security),
+		ReadOnly:  utils.BoolPtr(m.Origin == constants.OriginDP),
 		CreatedAt: createdAt,
 		UpdatedAt: updatedAt,
 	}

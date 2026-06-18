@@ -96,6 +96,10 @@ func (h *WebSubAPIDeploymentHandler) DeployWebSubAPI(c *gin.Context) {
 
 	deployment, err := h.websubAPIDeploymentService.DeployWebSubAPIByHandle(apiId, &req, orgId)
 	if err != nil {
+		// DP-originated artifacts are read-only: deployment cannot be initiated from the CP.
+		if respondArtifactGuardError(c, err) {
+			return
+		}
 		h.handleDeploymentError(c, err, apiId)
 		return
 	}
@@ -125,6 +129,10 @@ func (h *WebSubAPIDeploymentHandler) UndeployDeployment(c *gin.Context) {
 
 	deployment, err := h.websubAPIDeploymentService.UndeployWebSubAPIDeploymentByHandle(apiId, deploymentId, gatewayId, orgId)
 	if err != nil {
+		// DP-originated artifacts are read-only: undeployment cannot be initiated from the CP.
+		if respondArtifactGuardError(c, err) {
+			return
+		}
 		h.handleDeploymentError(c, err, apiId)
 		return
 	}
@@ -154,6 +162,10 @@ func (h *WebSubAPIDeploymentHandler) RestoreDeployment(c *gin.Context) {
 
 	deployment, err := h.websubAPIDeploymentService.RestoreWebSubAPIDeploymentByHandle(apiId, deploymentId, gatewayId, orgId)
 	if err != nil {
+		// DP-originated artifacts are read-only: restore cannot be initiated from the CP.
+		if respondArtifactGuardError(c, err) {
+			return
+		}
 		h.handleDeploymentError(c, err, apiId)
 		return
 	}

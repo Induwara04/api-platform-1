@@ -34,6 +34,9 @@ type MCPProxy struct {
 	CreatedAt        time.Time             `json:"createdAt" db:"-"`
 	UpdatedAt        time.Time             `json:"updatedAt" db:"-"`
 	Configuration    MCPProxyConfiguration `json:"configuration" db:"-"`
+	// Origin carries the artifact origin ("CP" or "DP") into create. Stored on the
+	// artifacts table, not mcp_proxies, so it is not scanned back here.
+	Origin string `json:"origin,omitempty" db:"-"`
 }
 
 type MCPProxyConfiguration struct {

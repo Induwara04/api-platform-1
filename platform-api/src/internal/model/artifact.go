@@ -20,12 +20,15 @@ package model
 import "time"
 
 type Artifact struct {
-	UUID             string    `db:"uuid"`
-	Handle           string    `db:"handle"`
-	Name             string    `db:"name"`
-	Version          string    `db:"version"`
-	Kind             string    `db:"kind"`
-	OrganizationUUID string    `db:"organization_uuid"`
-	CreatedAt        time.Time `db:"created_at"`
-	UpdatedAt        time.Time `db:"updated_at"`
+	UUID             string `db:"uuid"`
+	Handle           string `db:"handle"`
+	Name             string `db:"name"`
+	Version          string `db:"version"`
+	Kind             string `db:"kind"`
+	OrganizationUUID string `db:"organization_uuid"`
+	// Origin is "CP" for control-plane created artifacts or "DP" for artifacts
+	// pushed from a data-plane gateway. DP artifacts are read-only in the CP.
+	Origin    string    `db:"origin"`
+	CreatedAt time.Time `db:"created_at"`
+	UpdatedAt time.Time `db:"updated_at"`
 }

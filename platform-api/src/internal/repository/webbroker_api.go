@@ -78,6 +78,7 @@ func (r *WebBrokerAPIRepo) Create(a *model.WebBrokerAPI) error {
 		Version:          a.Version,
 		Kind:             constants.WebBrokerApi,
 		OrganizationUUID: a.OrganizationUUID,
+		Origin:           a.Origin,
 	}); err != nil {
 		return fmt.Errorf("failed to create artifact: %w", err)
 	}
@@ -106,7 +107,7 @@ func (r *WebBrokerAPIRepo) Create(a *model.WebBrokerAPI) error {
 func (r *WebBrokerAPIRepo) GetByHandle(handle, orgUUID string) (*model.WebBrokerAPI, error) {
 	query := `
 		SELECT
-			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
+			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.origin, a.created_at, a.updated_at,
 			p.project_uuid, p.description, p.created_by, p.lifecycle_status, p.transport, p.configuration
 		FROM artifacts a
 		JOIN webbroker_apis p ON a.uuid = p.uuid
@@ -119,7 +120,7 @@ func (r *WebBrokerAPIRepo) GetByHandle(handle, orgUUID string) (*model.WebBroker
 func (r *WebBrokerAPIRepo) GetByUUID(uuid, orgUUID string) (*model.WebBrokerAPI, error) {
 	query := `
 		SELECT
-			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
+			a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.origin, a.created_at, a.updated_at,
 			p.project_uuid, p.description, p.created_by, p.lifecycle_status, p.transport, p.configuration
 		FROM artifacts a
 		JOIN webbroker_apis p ON a.uuid = p.uuid
@@ -136,7 +137,7 @@ func (r *WebBrokerAPIRepo) List(orgUUID, projectUUID string, limit, offset int) 
 	if projectUUID != "" {
 		query = `
 			SELECT
-				a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
+				a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.origin, a.created_at, a.updated_at,
 				p.project_uuid, p.description, p.created_by, p.lifecycle_status, p.transport, p.configuration
 			FROM artifacts a
 			JOIN webbroker_apis p ON a.uuid = p.uuid
@@ -147,7 +148,7 @@ func (r *WebBrokerAPIRepo) List(orgUUID, projectUUID string, limit, offset int) 
 	} else {
 		query = `
 			SELECT
-				a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.created_at, a.updated_at,
+				a.uuid, a.handle, a.name, a.version, a.organization_uuid, a.origin, a.created_at, a.updated_at,
 				p.project_uuid, p.description, p.created_by, p.lifecycle_status, p.transport, p.configuration
 			FROM artifacts a
 			JOIN webbroker_apis p ON a.uuid = p.uuid
@@ -310,7 +311,7 @@ func (r *WebBrokerAPIRepo) scanWebBrokerAPI(row *sql.Row) (*model.WebBrokerAPI, 
 	var configurationJSON sql.NullString
 	var transportJSON sql.NullString
 	if err := row.Scan(
-		&a.UUID, &a.Handle, &a.Name, &a.Version, &a.OrganizationUUID, &a.CreatedAt, &a.UpdatedAt,
+		&a.UUID, &a.Handle, &a.Name, &a.Version, &a.OrganizationUUID, &a.Origin, &a.CreatedAt, &a.UpdatedAt,
 		&a.ProjectUUID, &a.Description, &a.CreatedBy, &a.LifeCycleStatus, &transportJSON, &configurationJSON,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -339,7 +340,7 @@ func (r *WebBrokerAPIRepo) scanWebBrokerAPIFromRows(rows *sql.Rows) (*model.WebB
 	var configurationJSON sql.NullString
 	var transportJSON sql.NullString
 	if err := rows.Scan(
-		&a.UUID, &a.Handle, &a.Name, &a.Version, &a.OrganizationUUID, &a.CreatedAt, &a.UpdatedAt,
+		&a.UUID, &a.Handle, &a.Name, &a.Version, &a.OrganizationUUID, &a.Origin, &a.CreatedAt, &a.UpdatedAt,
 		&a.ProjectUUID, &a.Description, &a.CreatedBy, &a.LifeCycleStatus, &transportJSON, &configurationJSON,
 	); err != nil {
 		return nil, err

@@ -94,6 +94,11 @@ func (h *GatewayHandler) CreateGateway(c *gin.Context) {
 		properties = *req.Properties
 	}
 
+	var syncMetadata bool
+	if req.SyncMetadata != nil {
+		syncMetadata = *req.SyncMetadata
+	}
+
 	// TODO: make `version` required when registering a gateway. For now it is optional and defaults to "1.0".
 	var version string
 	if req.Version != nil {
@@ -106,7 +111,7 @@ func (h *GatewayHandler) CreateGateway(c *gin.Context) {
 	}
 
 	gateway, err := h.gatewayService.RegisterGateway(orgId, req.Name, req.DisplayName, description, req.Vhost,
-		isCritical, functionalityType, version, properties)
+		isCritical, functionalityType, version, properties, syncMetadata)
 	if err != nil {
 		errMsg := err.Error()
 
@@ -260,7 +265,7 @@ func (h *GatewayHandler) UpdateGateway(c *gin.Context) {
 		return
 	}
 
-	response, err := h.gatewayService.UpdateGateway(gatewayId, orgId, req.Description, req.DisplayName, req.IsCritical, req.Properties)
+	response, err := h.gatewayService.UpdateGateway(gatewayId, orgId, req.Description, req.DisplayName, req.IsCritical, req.Properties, req.SyncMetadata)
 	if err != nil {
 		if errors.Is(err, constants.ErrGatewayNotFound) {
 			h.slogger.Error("Gateway not found during update", "error", err)

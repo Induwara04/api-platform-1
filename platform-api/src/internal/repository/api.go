@@ -85,6 +85,7 @@ func (r *APIRepo) CreateAPI(api *model.API) error {
 		Version:          api.Version,
 		Kind:             kind,
 		OrganizationUUID: api.OrganizationID,
+		Origin:           api.Origin,
 		CreatedAt:        api.CreatedAt,
 		UpdatedAt:        api.UpdatedAt,
 	}); err != nil {
@@ -113,7 +114,7 @@ func (r *APIRepo) GetAPIByUUID(apiUUID, orgUUID string) (*model.API, error) {
 	query := `
 		SELECT art.uuid, art.handle, art.name, art.kind, a.description, art.version, a.created_by,
 			a.project_uuid, art.organization_uuid, a.lifecycle_status,
-			a.transport, a.configuration, art.created_at, art.updated_at
+			a.transport, a.configuration, art.origin, art.created_at, art.updated_at
 		FROM rest_apis a INNER JOIN artifacts art
 		ON a.uuid = art.uuid
 		WHERE a.uuid = ? AND art.organization_uuid = ?
@@ -124,7 +125,7 @@ func (r *APIRepo) GetAPIByUUID(apiUUID, orgUUID string) (*model.API, error) {
 	err := r.db.QueryRow(r.db.Rebind(query), apiUUID, orgUUID).Scan(
 		&api.ID, &api.Handle, &api.Name, &api.Kind, &api.Description,
 		&api.Version, &api.CreatedBy, &api.ProjectID, &api.OrganizationID, &api.LifeCycleStatus,
-		&transportJSON, &configJSON,
+		&transportJSON, &configJSON, &api.Origin,
 		&api.CreatedAt, &api.UpdatedAt)
 
 	if err != nil {
@@ -205,7 +206,7 @@ func (r *APIRepo) GetAPIsByProjectUUID(projectUUID, orgUUID string) ([]*model.AP
 	query := `
 		SELECT art.uuid, art.handle, art.name, art.kind, a.description, art.version, a.created_by,
 			a.project_uuid, art.organization_uuid, a.lifecycle_status,
-			a.transport, a.configuration, art.created_at, art.updated_at
+			a.transport, a.configuration, art.origin, art.created_at, art.updated_at
 		FROM rest_apis a INNER JOIN artifacts art
 		ON a.uuid = art.uuid
 		WHERE a.project_uuid = ? AND art.organization_uuid = ?
@@ -226,7 +227,7 @@ func (r *APIRepo) GetAPIsByProjectUUID(projectUUID, orgUUID string) ([]*model.AP
 		err := rows.Scan(&api.ID, &api.Handle, &api.Name, &api.Kind, &api.Description,
 			&api.Version, &api.CreatedBy, &api.ProjectID, &api.OrganizationID,
 			&api.LifeCycleStatus,
-			&transportJSON, &configJSON, &api.CreatedAt, &api.UpdatedAt)
+			&transportJSON, &configJSON, &api.Origin, &api.CreatedAt, &api.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -257,7 +258,7 @@ func (r *APIRepo) GetAPIsByOrganizationUUID(orgUUID string, projectUUID string) 
 		query = `
 			SELECT art.uuid, art.handle, art.name, art.kind, a.description, art.version, a.created_by,
 				a.project_uuid, art.organization_uuid, a.lifecycle_status,
-				a.transport, a.configuration, art.created_at, art.updated_at
+				a.transport, a.configuration, art.origin, art.created_at, art.updated_at
 			FROM rest_apis a INNER JOIN artifacts art
 			ON a.uuid = art.uuid
 			WHERE art.organization_uuid = ? AND a.project_uuid = ?
@@ -269,7 +270,7 @@ func (r *APIRepo) GetAPIsByOrganizationUUID(orgUUID string, projectUUID string) 
 		query = `
 			SELECT art.uuid, art.handle, art.name, art.kind, a.description, art.version, a.created_by,
 				a.project_uuid, art.organization_uuid, a.lifecycle_status,
-				a.transport, a.configuration, art.created_at, art.updated_at
+				a.transport, a.configuration, art.origin, art.created_at, art.updated_at
 			FROM rest_apis a INNER JOIN artifacts art
 			ON a.uuid = art.uuid
 			WHERE art.organization_uuid = ?
@@ -292,7 +293,7 @@ func (r *APIRepo) GetAPIsByOrganizationUUID(orgUUID string, projectUUID string) 
 		err := rows.Scan(&api.ID, &api.Handle, &api.Name, &api.Kind, &api.Description,
 			&api.Version, &api.CreatedBy, &api.ProjectID, &api.OrganizationID,
 			&api.LifeCycleStatus,
-			&transportJSON, &configJSON, &api.CreatedAt, &api.UpdatedAt)
+			&transportJSON, &configJSON, &api.Origin, &api.CreatedAt, &api.UpdatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -317,7 +318,7 @@ func (r *APIRepo) GetAPIsByOrganizationUUID(orgUUID string, projectUUID string) 
 func (r *APIRepo) GetDeployedAPIsByGatewayUUID(gatewayUUID, orgUUID string) ([]*model.API, error) {
 	query := `
 		SELECT a.uuid, art.name, a.description, art.version, a.created_by,
-		       a.project_uuid, art.organization_uuid, art.kind, art.created_at, art.updated_at
+		       a.project_uuid, art.organization_uuid, art.kind, art.origin, art.created_at, art.updated_at
 		FROM rest_apis a INNER JOIN artifacts art ON a.uuid = art.uuid
 		INNER JOIN deployment_status ad ON art.uuid = ad.artifact_uuid
 		WHERE ad.gateway_uuid = ? AND art.organization_uuid = ? AND ad.status = ?
@@ -335,7 +336,7 @@ func (r *APIRepo) GetDeployedAPIsByGatewayUUID(gatewayUUID, orgUUID string) ([]*
 		api := &model.API{}
 		err := rows.Scan(&api.ID, &api.Name, &api.Description,
 			&api.Version, &api.CreatedBy, &api.ProjectID, &api.OrganizationID,
-			&api.Kind, &api.CreatedAt, &api.UpdatedAt)
+			&api.Kind, &api.Origin, &api.CreatedAt, &api.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan API row: %w", err)
 		}
@@ -349,7 +350,7 @@ func (r *APIRepo) GetDeployedAPIsByGatewayUUID(gatewayUUID, orgUUID string) ([]*
 func (r *APIRepo) GetAPIsByGatewayUUID(gatewayUUID, orgUUID string) ([]*model.API, error) {
 	query := `
 		SELECT a.uuid, art.name, a.description, art.version, a.created_by,
-			a.project_uuid, art.organization_uuid, art.kind, art.created_at, art.updated_at
+			a.project_uuid, art.organization_uuid, art.kind, art.origin, art.created_at, art.updated_at
 		FROM rest_apis a
 		INNER JOIN artifacts art ON a.uuid = art.uuid
 		INNER JOIN association_mappings aa ON a.uuid = aa.artifact_uuid
@@ -368,7 +369,7 @@ func (r *APIRepo) GetAPIsByGatewayUUID(gatewayUUID, orgUUID string) ([]*model.AP
 		api := &model.API{}
 		err := rows.Scan(&api.ID, &api.Name, &api.Description,
 			&api.Version, &api.CreatedBy, &api.ProjectID, &api.OrganizationID,
-			&api.Kind, &api.CreatedAt, &api.UpdatedAt)
+			&api.Kind, &api.Origin, &api.CreatedAt, &api.UpdatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan API row: %w", err)
 		}

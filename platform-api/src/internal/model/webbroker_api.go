@@ -36,6 +36,9 @@ type WebBrokerAPI struct {
 	CreatedAt        time.Time                 `json:"createdAt" db:"-"`
 	UpdatedAt        time.Time                 `json:"updatedAt" db:"-"`
 	Configuration    WebBrokerAPIConfiguration `json:"configuration" db:"-"`
+	// Origin carries the artifact origin ("CP" or "DP") into create. It is stored
+	// on the artifacts table, not rest_apis, so it is not scanned back here.
+	Origin string `json:"origin,omitempty" db:"-"`
 }
 
 // WebBrokerAPIConfiguration holds the WebBroker API configuration stored as JSON in the DB

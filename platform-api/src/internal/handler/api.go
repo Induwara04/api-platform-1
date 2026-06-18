@@ -280,6 +280,9 @@ func (h *APIHandler) UpdateAPI(c *gin.Context) {
 
 	apiResponse, err := h.apiService.UpdateAPIByHandle(apiId, &req, orgId)
 	if err != nil {
+		if respondArtifactGuardError(c, err) {
+			return
+		}
 		if errors.Is(err, constants.ErrAPINotFound) {
 			h.slogger.Error("API not found", "apiId", apiId, "organizationId", orgId)
 			c.JSON(http.StatusNotFound, utils.NewErrorResponse(404, "Not Found",
@@ -337,6 +340,9 @@ func (h *APIHandler) DeleteAPI(c *gin.Context) {
 
 	err := h.apiService.DeleteAPIByHandle(apiId, orgId)
 	if err != nil {
+		if respondArtifactGuardError(c, err) {
+			return
+		}
 		if errors.Is(err, constants.ErrAPINotFound) {
 			h.slogger.Error("API not found", "apiId", apiId, "organizationId", orgId)
 			c.JSON(http.StatusNotFound, utils.NewErrorResponse(404, "Not Found",

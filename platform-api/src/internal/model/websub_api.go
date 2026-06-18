@@ -36,6 +36,9 @@ type WebSubAPI struct {
 	CreatedAt        time.Time              `json:"createdAt" db:"-"`
 	UpdatedAt        time.Time              `json:"updatedAt" db:"-"`
 	Configuration    WebSubAPIConfiguration `json:"configuration" db:"-"`
+	// Origin carries the artifact origin ("CP" or "DP") into create. It is stored
+	// on the artifacts table, not rest_apis, so it is not scanned back here.
+	Origin string `json:"origin,omitempty" db:"-"`
 }
 
 // WebSubAPIConfiguration holds the WebSub API configuration stored as JSON in the DB
