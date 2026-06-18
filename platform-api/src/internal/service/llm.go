@@ -268,6 +268,20 @@ func (s *LLMProviderTemplateService) Delete(orgUUID, handle string) error {
 	if handle == "" {
 		return constants.ErrInvalidInput
 	}
+	// DP-originated templates are read-only in the control plane and cannot be deleted
+	// from the CP. Templates are organization-level with no per-gateway deployment
+	// lifecycle, so the read-only guard (ensureOriginMutable) applies rather than the
+	// undeploy-gated ensureOriginDeletable used by deployment-backed kinds.
+	existing, err := s.repo.GetByID(handle, orgUUID)
+	if err != nil {
+		return fmt.Errorf("failed to load template: %w", err)
+	}
+	if existing == nil {
+		return constants.ErrLLMProviderTemplateNotFound
+	}
+	if err := ensureOriginMutable(existing.Origin); err != nil {
+		return err
+	}
 	if err := s.repo.Delete(handle, orgUUID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return constants.ErrLLMProviderTemplateNotFound
