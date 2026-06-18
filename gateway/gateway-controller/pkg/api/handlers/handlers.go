@@ -155,6 +155,9 @@ func NewAPIServer(
 	}
 	server.restAPIService = restAPIService
 	server.RestAPIHandler = NewRestAPIHandler(restAPIService, logger)
+	// Wire the shared control-plane (DP->CP) push hooks so REST APIs use the same push
+	// path (APIServer.waitForDeploymentAndPush / pushArtifactUndeploy) as all other kinds.
+	server.RestAPIHandler.pushArtifactUndeploy = server.pushArtifactUndeploy
 
 	// Register status update callback
 	snapshotManager.SetStatusCallback(server.handleStatusUpdate)
@@ -327,6 +330,26 @@ func (s *APIServer) GetAPIByNameVersion(c *gin.Context, name string, version str
 	c.JSON(http.StatusOK, buildResourceResponseFromStored(cfg.SourceConfiguration, cfg))
 }
 
+// pushArtifactUndeploy notifies the control plane that a gateway-originated artifact
+// has been deleted from this gateway. The control plane keeps the artifact but marks
+// it undeployed (it is not removed and can be re-deployed later). It is a no-op for
+// control-plane-originated artifacts or when push is disabled / disconnected.
+func (s *APIServer) pushArtifactUndeploy(cfg *models.StoredConfig, log *slog.Logger) {
+	if cfg == nil || cfg.Origin != models.OriginGatewayAPI {
+		return
+	}
+	if s.controlPlaneClient != nil && s.controlPlaneClient.IsConnected() && s.systemConfig.Controller.ControlPlane.DeploymentPushEnabled {
+		undeploy := *cfg
+		undeploy.DesiredState = models.StateUndeployed
+		go func(uc models.StoredConfig) {
+			if err := s.controlPlaneClient.PushArtifact(uc.UUID, &uc, uc.DeploymentID); err != nil {
+				log.Error("Failed to push artifact undeploy to control plane",
+					slog.String("artifact_id", uc.UUID), slog.Any("error", err))
+			}
+		}(undeploy)
+	}
+}
+
 // waitForDeploymentAndPush waits for API deployment to complete and pushes it to the control plane
 // This is only called for APIs created directly via gateway endpoint (not from platform API)
 func (s *APIServer) waitForDeploymentAndPush(configID string, correlationID string, log *slog.Logger) {
@@ -364,7 +387,7 @@ func (s *APIServer) waitForDeploymentAndPush(configID string, correlationID stri
 				apiID := configID
 				deploymentID := cfg.DeploymentID
 
-				if err := s.controlPlaneClient.PushAPIDeployment(apiID, cfg, deploymentID); err != nil {
+				if err := s.controlPlaneClient.PushArtifact(apiID, cfg, deploymentID); err != nil {
 					log.Error("Failed to push deployment to control plane",
 						slog.String("api_id", apiID),
 						slog.Any("error", err))

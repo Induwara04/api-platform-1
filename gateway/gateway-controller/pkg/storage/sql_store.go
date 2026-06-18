@@ -180,6 +180,13 @@ func unmarshalSourceConfig(cfg *models.StoredConfig, jsonData string) error {
 		}
 		cfg.SourceConfiguration = config
 		cfg.Configuration = config
+	case "LlmProviderTemplate":
+		var config api.LLMProviderTemplate
+		if err := json.Unmarshal([]byte(jsonData), &config); err != nil {
+			return fmt.Errorf("failed to unmarshal source configuration: %w", err)
+		}
+		cfg.SourceConfiguration = config
+		cfg.Configuration = config
 	case "LlmProvider":
 		var config api.LLMProviderConfiguration
 		if err := json.Unmarshal([]byte(jsonData), &config); err != nil {

@@ -285,6 +285,11 @@ func (s *APIServer) UpdateMCPProxy(c *gin.Context, id string) {
 		slog.String("id", updated.UUID),
 		slog.String("handle", handle))
 
+	// Push the updated MCP proxy to the control plane (DP->CP), mirroring create.
+	if s.controlPlaneClient != nil && s.controlPlaneClient.IsConnected() && s.systemConfig.Controller.ControlPlane.DeploymentPushEnabled {
+		go s.waitForDeploymentAndPush(updated.UUID, correlationID, log)
+	}
+
 	mcp, err := rematerializeMCPProxyConfig(log, updated.UUID, updated.DisplayName, updated.SourceConfiguration)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, api.ErrorResponse{
@@ -328,6 +333,9 @@ func (s *APIServer) DeleteMCPProxy(c *gin.Context, id string) {
 	log.Info("MCP proxy configuration deleted",
 		slog.String("id", cfg.UUID),
 		slog.String("handle", handle))
+
+	// Notify the control plane so the artifact is marked undeployed (not deleted).
+	s.pushArtifactUndeploy(cfg, log)
 
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",

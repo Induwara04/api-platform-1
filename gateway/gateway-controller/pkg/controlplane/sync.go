@@ -608,7 +608,62 @@ func parseCPSyncInfo(cpSyncInfo string) (apiID, revisionID string) {
 	return data["id"], data["revision"]
 }
 
-// SyncBottomUpAPIs pushes all pending gateway-created APIs to the on-prem control plane.
+// PushGatewayArtifactsToControlPlane pushes every gateway-originated artifact to the
+// platform-API control plane via the generic import endpoint. It runs on first connect
+// and on every reconnect so artifacts created while disconnected (or before the CP was
+// reachable) become visible in the control plane. It is best-effort: a failure to push
+// one artifact is logged and does not stop the others.
+//
+// This is distinct from SyncArtifactsToOnPremAPIM, which targets the legacy on-prem APIM
+// product. Both may run; this one is gated only on deployment_push_enabled.
+func (c *Client) PushGatewayArtifactsToControlPlane() {
+	if c.IsConnected() && c.config.DeploymentPushEnabled {
+		c.pushGatewayArtifacts()
+	}
+}
+
+// pushGatewayArtifacts performs the actual listing and pushing of gateway-origin
+// artifacts. It is separated from the connection/flag gating so it can be tested in
+// isolation.
+func (c *Client) pushGatewayArtifacts() {
+	if c.db == nil {
+		c.logger.Warn("Cannot push gateway artifacts to control plane: database is not available")
+		return
+	}
+
+	configs, err := c.db.GetAllConfigsByOrigin(models.OriginGatewayAPI)
+	if err != nil {
+		c.logger.Error("Failed to list gateway-originated artifacts for control plane push", slog.Any("error", err))
+		return
+	}
+	if len(configs) == 0 {
+		return
+	}
+
+	c.logger.Info("Pushing gateway-originated artifacts to control plane", slog.Int("count", len(configs)))
+	pushed := 0
+	for _, meta := range configs {
+		// GetAllConfigsByOrigin returns metadata only; load the full config to push.
+		full, err := c.db.GetConfig(meta.UUID)
+		if err != nil || full == nil {
+			c.logger.Warn("Failed to load full config for control plane push",
+				slog.String("artifact_id", meta.UUID), slog.Any("error", err))
+			continue
+		}
+		cpArtifactID, err := c.apiUtilsService.PushArtifact(full.UUID, full, full.DeploymentID)
+		c.recordArtifactSyncStatus(full, cpArtifactID, err)
+		if err != nil {
+			c.logger.Error("Failed to push gateway artifact to control plane",
+				slog.String("artifact_id", full.UUID), slog.String("kind", full.Kind), slog.Any("error", err))
+			continue
+		}
+		pushed++
+	}
+	c.logger.Info("Completed pushing gateway-originated artifacts to control plane",
+		slog.Int("pushed", pushed), slog.Int("total", len(configs)))
+}
+
+// SyncArtifactsToOnPremAPIM SyncBottomUpAPIs pushes all pending gateway-created APIs to the on-prem control plane.
 // It is called on connect/reconnect (when IsOnPrem() is true) and immediately after a
 // gateway-initiated create/update/undeploy when the gateway is already connected.
 //

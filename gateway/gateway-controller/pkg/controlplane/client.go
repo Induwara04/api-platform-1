@@ -95,7 +95,7 @@ type ConnectionState struct {
 // ControlPlaneClient interface defines the methods needed from the control plane client
 type ControlPlaneClient interface {
 	IsConnected() bool
-	PushAPIDeployment(apiID string, apiConfig *models.StoredConfig, deploymentID string) error
+	PushArtifact(apiID string, apiConfig *models.StoredConfig, deploymentID string) error
 	SyncArtifactsToOnPremAPIM(apimConfig *utils.APIMConfig) error
 	IsOnPrem() bool
 	GetAPIMConfig() *utils.APIMConfig
@@ -446,6 +446,8 @@ func (c *Client) Connect() error {
 					c.logger.Error("Failed to sync artifacts to on-prem APIM", slog.Any("error", err))
 				}
 			}
+			// Push gateway-originated artifacts up to the platform-API control plane.
+			c.PushGatewayArtifactsToControlPlane()
 			c.syncSubscriptionPlans(gwID)
 			c.syncSubscriptionsForExistingAPIs(gwID)
 			// Sync API keys for LlmProvider, LlmProxy, and RestApi artifacts.
@@ -465,6 +467,8 @@ func (c *Client) Connect() error {
 					c.logger.Error("Failed to sync artifacts to on-prem APIM", slog.Any("error", err))
 				}
 			}
+			// Push gateway-originated artifacts up to the platform-API control plane.
+			c.PushGatewayArtifactsToControlPlane()
 			c.syncSubscriptionPlans(gwID)
 			c.syncSubscriptionsForExistingAPIs(gwID)
 			// Sync API keys for LlmProvider, LlmProxy, and RestApi artifacts.
@@ -4088,16 +4092,44 @@ func (c *Client) IsConnected() bool {
 	return c.state.Current == Connected && c.state.Conn != nil
 }
 
-// PushAPIDeployment pushes API deployment details to the control plane
-func (c *Client) PushAPIDeployment(apiID string, apiConfig *models.StoredConfig, deploymentID string) error {
+// PushArtifact pushes a gateway-created/updated artifact of any kind to the control plane.
+// The control plane mints its own artifact UUID and returns it; this records it (and the
+// sync outcome) on the artifact's row as cp_artifact_id / cp_sync_status / cp_sync_info,
+// mirroring the on-prem APIM bottom-up sync.
+func (c *Client) PushArtifact(apiID string, apiConfig *models.StoredConfig, deploymentID string) error {
 	// Check if connected to control plane
 	if !c.IsConnected() {
-		c.logger.Debug("Not connected to control plane, skipping API deployment push",
-			slog.String("api_id", apiID))
+		c.logger.Debug("Not connected to control plane, skipping artifact push",
+			slog.String("artifact_id", apiID))
 		return nil
 	}
 
-	return c.apiUtilsService.PushAPIDeployment(apiID, apiConfig, deploymentID)
+	cpArtifactID, err := c.apiUtilsService.PushArtifact(apiID, apiConfig, deploymentID)
+	c.recordArtifactSyncStatus(apiConfig, cpArtifactID, err)
+	return err
+}
+
+// recordArtifactSyncStatus persists the outcome of a DP->CP push on the artifact's row
+// (cp_sync_status / cp_sync_info / cp_artifact_id), mirroring the on-prem APIM bottom-up
+// sync. On success it stores the control-plane UUID; on failure it preserves the prior
+// cp_artifact_id and records the error detail. It is best-effort bookkeeping and only
+// applies to gateway-originated artifacts that still have a row (i.e. not undeploy/delete
+// pushes, where the artifact is being removed from the gateway).
+func (c *Client) recordArtifactSyncStatus(cfg *models.StoredConfig, cpArtifactID string, pushErr error) {
+	if c.db == nil || cfg == nil || cfg.Origin != models.OriginGatewayAPI || cfg.DesiredState == models.StateUndeployed {
+		return
+	}
+	if pushErr != nil {
+		if dbErr := c.db.UpdateCPSyncStatus(cfg.UUID, cfg.CPArtifactID, models.CPSyncStatusFailed, pushErr.Error()); dbErr != nil {
+			c.logger.Debug("Failed to record artifact CP sync failure",
+				slog.String("artifact_id", cfg.UUID), slog.Any("error", dbErr))
+		}
+		return
+	}
+	if dbErr := c.db.UpdateCPSyncStatus(cfg.UUID, cpArtifactID, models.CPSyncStatusSuccess, ""); dbErr != nil {
+		c.logger.Debug("Failed to record artifact CP sync success",
+			slog.String("artifact_id", cfg.UUID), slog.Any("error", dbErr))
+	}
 }
 
 // getWebSocketURL constructs the base WebSocket URL from configuration (cloud default; on-prem may override via well-known).

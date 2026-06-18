@@ -232,6 +232,13 @@ func (s *APIServer) UpdateLLMProxy(c *gin.Context, id string) {
 
 	updated := result.StoredConfig
 
+	// Push the updated proxy to the control plane (DP->CP), mirroring create.
+	if !result.IsStale {
+		if s.controlPlaneClient != nil && s.controlPlaneClient.IsConnected() && s.systemConfig.Controller.ControlPlane.DeploymentPushEnabled {
+			go s.waitForDeploymentAndPush(updated.UUID, correlationID, log)
+		}
+	}
+
 	proxy, err := rematerializeLLMProxyConfig(log, updated.UUID, updated.DisplayName, updated.SourceConfiguration)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, api.ErrorResponse{
@@ -265,6 +272,9 @@ func (s *APIServer) DeleteLLMProxy(c *gin.Context, id string) {
 		})
 		return
 	}
+
+	// Notify the control plane so the artifact is marked undeployed (not deleted).
+	s.pushArtifactUndeploy(cfg, log)
 
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",

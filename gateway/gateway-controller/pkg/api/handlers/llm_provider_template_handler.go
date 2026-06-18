@@ -28,6 +28,7 @@ import (
 	"github.com/gin-gonic/gin"
 	api "github.com/wso2/api-platform/gateway/gateway-controller/pkg/api/management"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/api/middleware"
+	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/models"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/storage"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/utils"
 )
@@ -83,6 +84,9 @@ func (s *APIServer) CreateLLMProviderTemplate(c *gin.Context) {
 	log.Info("LLM provider template created successfully",
 		slog.String("uuid", storedTemplate.UUID),
 		slog.String("handle", storedTemplate.GetHandle()))
+
+	// Push the newly created template to the control plane (DP->CP).
+	s.pushTemplateToControlPlane(storedTemplate, log)
 
 	c.JSON(http.StatusCreated, buildTemplateResourceResponse(storedTemplate))
 }
@@ -181,6 +185,10 @@ func (s *APIServer) UpdateLLMProviderTemplate(c *gin.Context, id string) {
 		slog.String("uuid", updated.UUID),
 		slog.String("handle", updated.GetHandle()))
 
+	// Push the updated template to the control plane (DP->CP). The control plane updates
+	// it only when this gateway owns the metadata (sync_metadata).
+	s.pushTemplateToControlPlane(updated, log)
+
 	c.JSON(http.StatusOK, buildTemplateResourceResponse(updated))
 }
 
@@ -217,4 +225,37 @@ func (s *APIServer) DeleteLLMProviderTemplate(c *gin.Context, id string) {
 		"message": "LLM provider template deleted successfully",
 		"id":      deleted.GetHandle(),
 	})
+}
+
+// pushTemplateToControlPlane pushes an LLM provider template to the control plane on
+// create/update. Templates are organization-level and have no per-gateway deployment
+// lifecycle, so they are always pushed with status "deployed" (the control plane
+// creates the template, or updates it when this gateway owns the metadata). It is a
+// no-op when push is disabled or the control plane is disconnected.
+func (s *APIServer) pushTemplateToControlPlane(stored *models.StoredLLMProviderTemplate, log *slog.Logger) {
+	if stored == nil {
+		return
+	}
+	if s.controlPlaneClient == nil || !s.controlPlaneClient.IsConnected() ||
+		!s.systemConfig.Controller.ControlPlane.DeploymentPushEnabled {
+		return
+	}
+	cfg := &models.StoredConfig{
+		UUID:                stored.UUID,
+		Kind:                models.KindLlmProviderTemplate,
+		Handle:              stored.GetHandle(),
+		DisplayName:         stored.GetHandle(),
+		Configuration:       stored.Configuration,
+		SourceConfiguration: stored.Configuration,
+		DesiredState:        models.StateDeployed,
+		Origin:              models.OriginGatewayAPI,
+		CreatedAt:           stored.CreatedAt,
+		UpdatedAt:           stored.UpdatedAt,
+	}
+	go func(c *models.StoredConfig) {
+		if err := s.controlPlaneClient.PushArtifact(c.UUID, c, ""); err != nil {
+			log.Error("Failed to push LLM provider template to control plane",
+				slog.String("uuid", c.UUID), slog.Any("error", err))
+		}
+	}(cfg)
 }

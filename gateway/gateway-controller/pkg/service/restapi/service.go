@@ -66,6 +66,9 @@ type UpdateResult struct {
 // DeleteResult holds the result of a Delete operation.
 type DeleteResult struct {
 	Handle string
+	// Config is the stored configuration that was deleted, so the handler can notify
+	// the control plane (undeploy) for gateway-originated artifacts.
+	Config *models.StoredConfig
 }
 
 // RestAPIService encapsulates business logic for REST API CRUD operations.
@@ -359,6 +362,12 @@ func (s *RestAPIService) Update(params UpdateParams) (*UpdateResult, error) {
 		}()
 	}
 
+	// Push to control plane asynchronously if connected
+	if existing.Origin == models.OriginGatewayAPI && s.controlPlaneClient != nil &&
+		s.controlPlaneClient.IsConnected() && s.systemConfig.Controller.ControlPlane.DeploymentPushEnabled {
+		go s.waitForDeploymentAndPush(existing.UUID, params.CorrelationID, log)
+	}
+
 	log.Info("API configuration updated",
 		slog.String("id", existing.UUID),
 		slog.String("handle", params.Handle),
@@ -411,7 +420,7 @@ func (s *RestAPIService) Delete(params DeleteParams) (*DeleteResult, error) {
 		slog.String("id", cfg.UUID),
 		slog.String("handle", params.Handle))
 
-	return &DeleteResult{Handle: params.Handle}, nil
+	return &DeleteResult{Handle: params.Handle, Config: cfg}, nil
 }
 
 // updatePolicyForConfig upserts the runtime config for an API into the policy engine.
@@ -458,7 +467,7 @@ func (s *RestAPIService) waitForDeploymentAndPush(configID string, correlationID
 				apiID := configID
 				deploymentID := cfg.DeploymentID
 
-				if err := s.controlPlaneClient.PushAPIDeployment(apiID, cfg, deploymentID); err != nil {
+				if err := s.controlPlaneClient.PushArtifact(apiID, cfg, deploymentID); err != nil {
 					log.Error("Failed to push deployment to control plane",
 						slog.String("api_id", apiID),
 						slog.Any("error", err))
@@ -557,4 +566,3 @@ func (s *RestAPIService) publishEvent(eventType eventhub.EventType, action, enti
 			slog.String("entity_id", entityID))
 	}
 }
-

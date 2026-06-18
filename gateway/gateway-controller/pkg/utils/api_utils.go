@@ -36,6 +36,7 @@ import (
 	"sync"
 	"time"
 
+	commonconstants "github.com/wso2/api-platform/common/constants"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/constants"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/models"
 )
@@ -940,85 +941,172 @@ func (s *APIUtilsService) SaveAPIDefinition(apiID string, zipData []byte) error 
 	return nil
 }
 
-// APIDeploymentPush represents the request body for pushing API deployment details to the control plane
-type APIDeploymentPush struct {
-	ID                string     `json:"id" yaml:"id"`
-	Configuration     any        `json:"configuration" yaml:"configuration"`
-	Status            string     `json:"status" yaml:"status"`
-	CreatedAt         time.Time  `json:"createdAt" yaml:"createdAt"`
-	UpdatedAt         time.Time  `json:"updatedAt" yaml:"updatedAt"`
-	DeployedAt        *time.Time `json:"deployedAt,omitempty" yaml:"deployedAt,omitempty"`
-	ProjectIdentifier string     `json:"projectIdentifier" yaml:"projectIdentifier"`
+// ImportArtifactRequest is the generic DP->CP push body sent to the control plane's
+// /artifacts/import-gateway-artifact endpoint. Configuration is the gateway artifact
+// custom resource exactly as deployed to the gateway (apiVersion/kind/metadata/spec);
+// the artifact type is identified by configuration.kind.
+type ImportArtifactRequest struct {
+	ID            string                 `json:"id"`
+	Configuration map[string]interface{} `json:"configuration"`
+	Status        string                 `json:"status"`
+	CreatedAt     time.Time              `json:"createdAt"`
+	UpdatedAt     time.Time              `json:"updatedAt"`
+	DeployedAt    *time.Time             `json:"deployedAt,omitempty"`
 }
 
-// PushAPIDeployment sends API deployment details to the control plane via a REST call
-func (s *APIUtilsService) PushAPIDeployment(apiID string, apiConfig *models.StoredConfig, deploymentID string) error {
-	// Construct the deployment URL
-	deployURL := s.getBaseURL() + "/apis/" + apiID + "/gateway-deployments"
-	if deploymentID != "" {
-		deployURL += "?deploymentId=" + deploymentID
+// ImportArtifactResponse is the control plane's reply to a DP->CP push. ID is the
+// control-plane artifact UUID (the CP mints its own; it does not reuse the gateway's),
+// which the gateway records as the artifact's cp_artifact_id.
+type ImportArtifactResponse struct {
+	ID string `json:"id"`
+}
+
+// isOrgLevelKind reports whether the artifact kind is organization-level and thus
+// does not belong to a project (the control plane ignores the project for these).
+func isOrgLevelKind(kind string) bool {
+	return kind == models.KindLlmProvider || kind == models.KindLlmProviderTemplate
+}
+
+// structToMap converts the typed artifact configuration into a generic map by
+// round-tripping through JSON, so the CR can be transmitted (and have its metadata
+// labels augmented) without depending on each kind's concrete type.
+func structToMap(v any) (map[string]interface{}, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, err
+	}
+	if m == nil {
+		m = map[string]interface{}{}
+	}
+	return m, nil
+}
+
+// hasProjectAnnotation reports whether the configuration carries a project on its
+// metadata via the project-id annotation. The project is never defaulted;
+// project-scoped artifacts must declare it explicitly in the CR.
+func hasProjectAnnotation(cfg map[string]interface{}) bool {
+	md, _ := cfg["metadata"].(map[string]interface{})
+	if md == nil {
+		return false
+	}
+	anns, _ := md["annotations"].(map[string]interface{})
+	if anns == nil {
+		return false
+	}
+	v, _ := anns[commonconstants.AnnotationProjectID].(string)
+	return v != ""
+}
+
+// PushArtifact pushes a gateway-created/updated artifact of any kind to the control
+// plane via the generic /artifacts/import-gateway-artifact endpoint. The request's
+// configuration is the gateway artifact custom resource itself, so the control plane
+// receives the exact same descriptor that is deployed to the gateway. The CP creates
+// or updates it and marks it read-only with origin "DP".
+func (s *APIUtilsService) PushArtifact(artifactID string, artifact *models.StoredConfig, deploymentID string) (string, error) {
+	importURL := s.getBaseURL() + "/artifacts/import-gateway-artifact"
+
+	// log the whole artifact storedConfig for debugging purposes
+	s.logger.Info("Pushing artifact to control plane",
+		slog.String("artifact_id", artifactID),
+		slog.String("kind", artifact.Kind),
+		slog.String("deployment_id", deploymentID),
+		slog.Any("artifact", artifact),
+	)
+
+	// The configuration sent to the CP is the artifact CR (apiVersion/kind/metadata/spec).
+	configuration, err := structToMap(artifact.SourceConfiguration)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode artifact configuration: %w", err)
 	}
 
-	// Create request body
-	requestBody := APIDeploymentPush{
-		ID:                apiConfig.UUID,
-		Configuration:     apiConfig.Configuration,
-		Status:            string(apiConfig.DesiredState),
-		CreatedAt:         apiConfig.CreatedAt,
-		UpdatedAt:         apiConfig.UpdatedAt,
-		DeployedAt:        apiConfig.DeployedAt,
-		ProjectIdentifier: "default", // Set a default value or fetch from config if needed
+	// log the configuration map for debugging purposes
+	s.logger.Info("Artifact configuration map",
+		slog.String("artifact_id", artifactID),
+		slog.Any("configuration", configuration),
+	)
+
+	// Project-scoped kinds must declare their project via the project-id annotation in
+	// the CR. The project is never assumed or defaulted: if it is missing, fail the push
+	// so the gateway operator must set it explicitly. Organization-level kinds carry none.
+	if !isOrgLevelKind(artifact.Kind) && !hasProjectAnnotation(configuration) {
+		return "", fmt.Errorf("cannot push artifact %s (kind %s) to the control plane: a project is required as the %q metadata annotation",
+			artifact.UUID, artifact.Kind, commonconstants.AnnotationProjectID)
 	}
 
-	// Marshal request body to JSON
+	requestBody := ImportArtifactRequest{
+		ID:            artifact.UUID,
+		Configuration: configuration,
+		Status:        string(artifact.DesiredState),
+		CreatedAt:     artifact.CreatedAt,
+		UpdatedAt:     artifact.UpdatedAt,
+		DeployedAt:    artifact.DeployedAt,
+	}
+
 	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
-		return fmt.Errorf("failed to marshal request body: %w", err)
+		return "", fmt.Errorf("failed to marshal request body: %w", err)
 	}
 
-	// Create POST request
-	req, err := http.NewRequest("POST", deployURL, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", importURL, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
 	// Add headers
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Add("api-key", s.config.Token)
 
-	s.logger.Info("Pushing API deployment to control plane",
-		slog.String("api_id", apiID),
-		slog.String("url", deployURL),
+	s.logger.Info("Pushing artifact to control plane",
+		slog.String("artifact_id", artifact.UUID),
+		slog.String("kind", artifact.Kind),
+		slog.String("url", importURL),
 		slog.String("deployment_id", deploymentID))
 
 	// Make the request
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to send deployment notification: %w", err)
+		return "", fmt.Errorf("failed to send artifact import request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	// Read response body for error details
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to read response body: %w", err)
+		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	// Check response status
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		s.logger.Error("API deployment push failed",
-			slog.String("api_id", apiID),
+		s.logger.Error("Artifact import push failed",
+			slog.String("artifact_id", artifact.UUID),
+			slog.String("kind", artifact.Kind),
 			slog.Int("status_code", resp.StatusCode),
 			slog.String("response", string(bodyBytes)))
-		return fmt.Errorf("deployment push for api %s failed with status %d", apiID, resp.StatusCode)
+		return "", fmt.Errorf("artifact import for %s failed with status %d", artifact.UUID, resp.StatusCode)
 	}
 
-	s.logger.Info("Successfully pushed API deployment to control plane",
-		slog.String("api_id", apiID),
+	// The control plane mints its own artifact UUID and returns it; the caller records
+	// it as the artifact's cp_artifact_id (see bottom-up sync's CPArtifactID handling).
+	var importResp ImportArtifactResponse
+	if len(bodyBytes) > 0 {
+		if err := json.Unmarshal(bodyBytes, &importResp); err != nil {
+			s.logger.Warn("Failed to parse artifact import response; cp_artifact_id will be empty",
+				slog.String("artifact_id", artifact.UUID), slog.Any("error", err))
+		}
+	}
+
+	s.logger.Info("Successfully pushed artifact to control plane",
+		slog.String("artifact_id", artifact.UUID),
+		slog.String("kind", artifact.Kind),
+		slog.String("cp_artifact_id", importResp.ID),
 		slog.Int("status_code", resp.StatusCode),
 		slog.String("response", string(bodyBytes)))
 
-	return nil
+	return importResp.ID, nil
 }
 
 func MapToStruct(data map[string]interface{}, out interface{}) error {
