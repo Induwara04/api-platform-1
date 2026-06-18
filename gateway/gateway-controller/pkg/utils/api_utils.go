@@ -1009,30 +1009,20 @@ func hasProjectAnnotation(cfg map[string]interface{}) bool {
 func (s *APIUtilsService) PushArtifact(artifactID string, artifact *models.StoredConfig, deploymentID string) (string, error) {
 	importURL := s.getBaseURL() + "/artifacts/import-gateway-artifact"
 
-	// log the whole artifact storedConfig for debugging purposes
-	s.logger.Info("Pushing artifact to control plane",
-		slog.String("artifact_id", artifactID),
-		slog.String("kind", artifact.Kind),
-		slog.String("deployment_id", deploymentID),
-		slog.Any("artifact", artifact),
-	)
-
 	// The configuration sent to the CP is the artifact CR (apiVersion/kind/metadata/spec).
 	configuration, err := structToMap(artifact.SourceConfiguration)
 	if err != nil {
 		return "", fmt.Errorf("failed to encode artifact configuration: %w", err)
 	}
 
-	// log the configuration map for debugging purposes
-	s.logger.Info("Artifact configuration map",
-		slog.String("artifact_id", artifactID),
-		slog.Any("configuration", configuration),
-	)
-
 	// Project-scoped kinds must declare their project via the project-id annotation in
 	// the CR. The project is never assumed or defaulted: if it is missing, fail the push
 	// so the gateway operator must set it explicitly. Organization-level kinds carry none.
 	if !isOrgLevelKind(artifact.Kind) && !hasProjectAnnotation(configuration) {
+		s.logger.Error("Cannot push project-scoped artifact to the control plane: missing project annotation",
+			slog.String("artifact_id", artifact.UUID),
+			slog.String("kind", artifact.Kind),
+			slog.String("required_annotation", commonconstants.AnnotationProjectID))
 		return "", fmt.Errorf("cannot push artifact %s (kind %s) to the control plane: a project is required as the %q metadata annotation",
 			artifact.UUID, artifact.Kind, commonconstants.AnnotationProjectID)
 	}

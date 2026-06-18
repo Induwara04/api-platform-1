@@ -41,10 +41,16 @@ func (i *llmProxyImporter) RequiresProject() bool { return true }
 func (i *llmProxyImporter) Import(ctx *ImportContext) (*ImportResult, error) {
 	version := importVersion(ctx)
 
+	// The proxy CR carries the provider as an object ({id: <handle>, auth: ...}), whereas
+	// the control plane's LLMProxyConfig stores it flattened as the provider handle string.
+	// Extract the handle and decode the rest of the spec without "provider" so the generic
+	// decoder does not fail trying to unmarshal an object into a string field.
+	providerHandle := specProviderHandle(ctx.Configuration.Spec)
 	var cfg model.LLMProxyConfig
-	if err := decodeSpec(ctx.Configuration.Spec, &cfg); err != nil {
+	if err := decodeSpec(specWithout(ctx.Configuration.Spec, "provider"), &cfg); err != nil {
 		return nil, err
 	}
+	cfg.Provider = providerHandle
 	// Lift the gateway's security policy back into the first-class Security field.
 	// (LLM proxies have no rate-limiting field, so any rate-limit policies — which the
 	// proxy flow does not emit — are simply not carried over.)

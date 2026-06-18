@@ -84,7 +84,8 @@ func dpProxyReq(dpID, handle, displayName, providerHandle string) dto.ImportGate
 			Spec: map[string]interface{}{
 				"displayName": displayName,
 				"version":     "v1.0",
-				"provider":    providerHandle, // provider referenced by handle
+				// The proxy CR references its provider by handle, encoded as an object.
+				"provider": map[string]interface{}{"id": providerHandle},
 			},
 		},
 		CreatedAt: time.Now(),

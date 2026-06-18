@@ -215,17 +215,14 @@ func TestArtifactImport_NonexistentProject(t *testing.T) {
 	req := restImportRequest(id, "x", "X")
 	req.Configuration.Metadata.Annotations = projectAnnotations("no-such-project")
 
-	// Project provided but not present in the org -> silent failure: no error, no create.
-	resp, err := d.svc.Import(importTestOrgID, importTestGatewayID, req)
-	if err != nil {
-		t.Fatalf("Import() error = %v, want nil (silent failure)", err)
+	// Project provided but not present in the org -> the import fails with ErrProjectNotFound
+	// and no artifact is created.
+	if _, err := d.svc.Import(importTestOrgID, importTestGatewayID, req); !errors.Is(err, constants.ErrProjectNotFound) {
+		t.Fatalf("Import() error = %v, want ErrProjectNotFound", err)
 	}
-	if resp == nil || resp.ID != id {
-		t.Fatalf("expected a no-op response, got %#v", resp)
-	}
-	art, err := d.artifactRepo.GetByUUID(id, importTestOrgID)
+	art, err := d.artifactRepo.GetByHandle("x", importTestOrgID)
 	if err != nil {
-		t.Fatalf("GetByUUID: %v", err)
+		t.Fatalf("GetByHandle: %v", err)
 	}
 	if art != nil {
 		t.Errorf("artifact was created despite the project not existing in the org")
@@ -500,7 +497,7 @@ func TestArtifactImport_ProxyMissingProvider(t *testing.T) {
 			APIVersion: "api-platform.wso2.com/v1",
 			Kind:       constants.LLMProxy,
 			Metadata:   dto.ArtifactImportMetadata{Name: "orphan-proxy", Annotations: projectAnnotations("default")},
-			Spec:       map[string]interface{}{"provider": "does-not-exist-uuid"},
+			Spec:       map[string]interface{}{"provider": map[string]interface{}{"id": "does-not-exist-handle"}},
 		},
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),

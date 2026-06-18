@@ -79,7 +79,7 @@ func TestArtifactImport_GeneratesCPUUIDAcrossKinds(t *testing.T) {
 	importDPProvider(t, d, provDPID, "dp-prov", "dp-tmpl")
 	// LLM Proxy referencing the provider by its handle (not a UUID).
 	proxyResp, err := d.svc.Import(importTestOrgID, importTestGatewayID,
-		mkReq(proxyDPID, constants.LLMProxy, "dp-proxy", "default", map[string]interface{}{"provider": "dp-prov"}))
+		mkReq(proxyDPID, constants.LLMProxy, "dp-proxy", "default", map[string]interface{}{"provider": map[string]interface{}{"id": "dp-prov"}}))
 	if err != nil {
 		t.Fatalf("import LLM proxy: %v", err)
 	}

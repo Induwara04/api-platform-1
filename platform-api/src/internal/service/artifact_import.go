@@ -194,19 +194,12 @@ func (s *ArtifactImportService) Import(orgID, gatewayID string, req dto.ImportGa
 			return nil, fmt.Errorf("failed to resolve project %q: %w", ictx.ProjectName, err)
 		}
 		if project == nil {
-			// The project was provided but does not exist in this organization. Fail the
-			// artifact creation silently: log it and return a no-op success so the gateway
-			// is not blocked; the artifact is simply not created in the control plane.
-			s.slogger.Warn("Project is not available in the organization; gateway artifact not imported",
+			// The project was provided but does not exist in this organization. Reject the
+			// import with ErrProjectNotFound (the project is never created or defaulted);
+			// the artifact is not created in the control plane.
+			s.slogger.Error("Project is not available in the organization; gateway artifact not imported",
 				"kind", kind, "artifactId", req.ID, "project", ictx.ProjectName, "orgId", orgID)
-			return &dto.ImportGatewayArtifactResponse{
-				ID:         req.ID,
-				Status:     req.Status,
-				Origin:     constants.OriginDP,
-				CreatedAt:  req.CreatedAt,
-				UpdatedAt:  req.UpdatedAt,
-				DeployedAt: req.DeployedAt,
-			}, nil
+			return nil, fmt.Errorf("%w: project %q does not exist in org %q", constants.ErrProjectNotFound, ictx.ProjectName, orgID)
 		}
 		ictx.ProjectID = project.ID
 	}
@@ -445,6 +438,36 @@ func specString(spec map[string]interface{}, key string) string {
 		return v
 	}
 	return ""
+}
+
+// specProviderHandle extracts the provider handle from a proxy CR spec.
+// The gateway encodes the provider as an object ({id: <handle>, auth: ...}) rather
+// than a plain string, so a simple cast on spec["provider"] is not enough.
+func specProviderHandle(spec map[string]interface{}) string {
+	if spec == nil {
+		return ""
+	}
+	provider, ok := spec["provider"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	id, _ := provider["id"].(string)
+	return id
+}
+
+// specWithout returns a shallow copy of spec with the named key omitted.
+// The original map is never modified.
+func specWithout(spec map[string]interface{}, key string) map[string]interface{} {
+	if spec == nil {
+		return nil
+	}
+	out := make(map[string]interface{}, len(spec))
+	for k, v := range spec {
+		if k != key {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 // decodeSpec re-marshals the generic spec map into a kind-specific struct via JSON.
