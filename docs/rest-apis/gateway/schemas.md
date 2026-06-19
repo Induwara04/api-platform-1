@@ -3762,6 +3762,127 @@ and
 |totalCount|integer|false|none|Total number of API keys|
 |status|string|false|none|none|
 
+<h2 id="tocS_WebhookSecretCreationRequest">WebhookSecretCreationRequest</h2>
+
+<a id="schemawebhooksecretcreationrequest"></a>
+<a id="schema_WebhookSecretCreationRequest"></a>
+<a id="tocSwebhooksecretcreationrequest"></a>
+<a id="tocswebhooksecretcreationrequest"></a>
+
+```json
+{
+  "displayName": "GitHub Webhook"
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|displayName|string|true|none|Human-readable label for this secret (used to derive the immutable name slug).|
+
+<h2 id="tocS_WebhookSecretInfo">WebhookSecretInfo</h2>
+
+<a id="schemawebhooksecretinfo"></a>
+<a id="schema_WebhookSecretInfo"></a>
+<a id="tocSwebhooksecretinfo"></a>
+<a id="tocswebhooksecretinfo"></a>
+
+```json
+{
+  "name": "github-webhook",
+  "displayName": "GitHub Webhook",
+  "status": "active",
+  "createdAt": "2026-06-01T10:00:00Z",
+  "updatedAt": "2026-06-01T10:00:00Z"
+}
+
+```
+
+Metadata for an HMAC secret. The plaintext value is never included.
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|name|string|false|none|URL-safe slug (immutable, used as path parameter for regenerate/delete).|
+|displayName|string|false|none|Human-readable label.|
+|status|string|false|none|none|
+|createdAt|string(date-time)|false|none|none|
+|updatedAt|string(date-time)|false|none|none|
+
+#### Enumerated Values
+
+|Property|Value|
+|---|---|
+|status|active|
+|status|revoked|
+
+<h2 id="tocS_WebhookSecretCreationResponse">WebhookSecretCreationResponse</h2>
+
+<a id="schemawebhooksecretcreationresponse"></a>
+<a id="schema_WebhookSecretCreationResponse"></a>
+<a id="tocSwebhooksecretcreationresponse"></a>
+<a id="tocswebhooksecretcreationresponse"></a>
+
+```json
+{
+  "status": "success",
+  "message": "Webhook secret generated successfully",
+  "secret": "whsec_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b",
+  "webhookSecret": {
+    "name": "github-webhook",
+    "displayName": "GitHub Webhook",
+    "status": "active",
+    "createdAt": "2026-06-01T10:00:00Z",
+    "updatedAt": "2026-06-01T10:00:00Z"
+  }
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|status|string|true|none|none|
+|message|string|true|none|none|
+|secret|string|true|none|The generated plaintext secret value (whsec_ prefix + 64 hex chars).<br>Returned exactly once — store it immediately as it will not be retrievable again.|
+|webhookSecret|[WebhookSecretInfo](#schemawebhooksecretinfo)|false|none|Metadata for an HMAC secret. The plaintext value is never included.|
+
+<h2 id="tocS_WebhookSecretListResponse">WebhookSecretListResponse</h2>
+
+<a id="schemawebhooksecretlistresponse"></a>
+<a id="schema_WebhookSecretListResponse"></a>
+<a id="tocSwebhooksecretlistresponse"></a>
+<a id="tocswebhooksecretlistresponse"></a>
+
+```json
+{
+  "status": "success",
+  "totalCount": 2,
+  "secrets": [
+    {
+      "name": "github-webhook",
+      "displayName": "GitHub Webhook",
+      "status": "active",
+      "createdAt": "2026-06-01T10:00:00Z",
+      "updatedAt": "2026-06-01T10:00:00Z"
+    }
+  ]
+}
+
+```
+
+### Properties
+
+|Name|Type|Required|Restrictions|Description|
+|---|---|---|---|---|
+|status|string|false|none|none|
+|totalCount|integer|false|none|Total number of active secrets for this API|
+|secrets|[[WebhookSecretInfo](#schemawebhooksecretinfo)]|false|none|[Metadata for an HMAC secret. The plaintext value is never included.]|
+
 <h2 id="tocS_SecretListResponse">SecretListResponse</h2>
 
 <a id="schemasecretlistresponse"></a>

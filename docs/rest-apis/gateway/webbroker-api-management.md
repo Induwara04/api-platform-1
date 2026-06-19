@@ -804,9 +804,7 @@ Update an API key with a custom value instead of auto-generating one.
 
 ```json
 {
-  "displayName": "Updated",
-  "apiKey": "custom-key-999",
-  "issuer": "portal"
+  "name": "my-production-key"
 }
 ```
 
