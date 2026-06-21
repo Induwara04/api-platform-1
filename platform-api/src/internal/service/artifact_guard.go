@@ -63,6 +63,9 @@ func ensureOriginDeletable(deploymentRepo repository.DeploymentRepository, origi
 	if origin != constants.OriginDP {
 		return nil
 	}
+	if deploymentRepo == nil {
+		return fmt.Errorf("deployment repository is not configured")
+	}
 	active, err := deploymentRepo.HasActiveDeployment(artifactUUID, orgID)
 	if err != nil {
 		return err

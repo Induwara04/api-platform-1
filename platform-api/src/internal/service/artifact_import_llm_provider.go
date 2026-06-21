@@ -87,9 +87,11 @@ func (i *llmProviderImporter) Import(ctx *ImportContext) (*ImportResult, error) 
 		existing.Version = version
 		existing.Configuration = cfg
 		if cfg.Template != "" {
-			if templateUUID, err := i.resolveTemplateUUID(cfg.Template, ctx.OrgID); err == nil {
-				existing.TemplateUUID = templateUUID
+			templateUUID, err := i.resolveTemplateUUID(cfg.Template, ctx.OrgID)
+			if err != nil {
+				return nil, err
 			}
+			existing.TemplateUUID = templateUUID
 		}
 	} else {
 		// CP-owned (or non-syncing gateway): only update gateway-specific upstream.

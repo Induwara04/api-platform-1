@@ -47,7 +47,7 @@ func (i *restAPIImporter) Import(ctx *ImportContext) (*ImportResult, error) {
 	}
 
 	if ctx.Existing == nil {
-		// Create a new DP-originated REST API preserving the gateway UUID.
+		// Create a new DP-originated REST API preserving the CP UUID.
 		api := &model.API{
 			ID:              ctx.ID,
 			Handle:          importHandle(ctx),
@@ -67,33 +67,28 @@ func (i *restAPIImporter) Import(ctx *ImportContext) (*ImportResult, error) {
 		return &ImportResult{ID: api.ID, DeployedVersion: version, Deployable: true}, nil
 	}
 
-	if shouldWriteMetadata(ctx.Existing, ctx.SyncMetadata) {
-		api := &model.API{
-			ID:             ctx.ID,
-			Handle:         ctx.Existing.Handle,
-			Name:           importDisplayName(ctx),
-			Version:        version,
-			Kind:           constants.RestApi,
-			ProjectID:      ctx.ProjectID,
-			OrganizationID: ctx.OrgID,
-			Configuration:  cfg,
-		}
-		if err := i.apiRepo.UpdateAPI(api); err != nil {
-			return nil, fmt.Errorf("failed to update REST API from gateway import: %w", err)
-		}
-		return &ImportResult{ID: ctx.ID, DeployedVersion: version, Deployable: true}, nil
-	}
-
-	// CP-owned (or non-syncing gateway): update only gateway-specific data (upstream).
+	// Existing artifact: load it once and mutate only the fields owned by the import, so
+	// unrelated fields (description, createdBy, lifecycle status, transport) are preserved
+	// rather than reset to zero values by a partial UpdateAPI. Mirrors the MCP/LLM importers.
 	existing, err := i.apiRepo.GetAPIByUUID(ctx.ID, ctx.OrgID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load existing REST API: %w", err)
 	}
-	if existing != nil {
+	if existing == nil {
+		return &ImportResult{ID: ctx.ID, DeployedVersion: version, Deployable: true}, nil
+	}
+
+	if shouldWriteMetadata(ctx.Existing, ctx.SyncMetadata) {
+		existing.Name = importDisplayName(ctx)
+		existing.Version = version
+		existing.ProjectID = ctx.ProjectID
+		existing.Configuration = cfg
+	} else {
+		// CP-owned (or non-syncing gateway): update only gateway-specific data (upstream).
 		existing.Configuration.Upstream = cfg.Upstream
-		if err := i.apiRepo.UpdateAPI(existing); err != nil {
-			return nil, fmt.Errorf("failed to update REST API upstream from gateway import: %w", err)
-		}
+	}
+	if err := i.apiRepo.UpdateAPI(existing); err != nil {
+		return nil, fmt.Errorf("failed to update REST API from gateway import: %w", err)
 	}
 	return &ImportResult{ID: ctx.ID, DeployedVersion: version, Deployable: true}, nil
 }

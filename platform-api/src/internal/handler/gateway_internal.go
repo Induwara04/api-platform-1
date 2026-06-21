@@ -155,9 +155,6 @@ func (h *GatewayInternalAPIHandler) ImportGatewayArtifact(c *gin.Context) {
 	response, err := h.artifactImportService.Import(orgID, gatewayID, req)
 	if err != nil {
 		switch {
-		case errors.Is(err, constants.ErrProjectNotFound):
-			c.JSON(http.StatusNotFound, utils.NewErrorResponse(404, "Not Found",
-				"Project not found"))
 		case errors.Is(err, constants.ErrArtifactInvalidKind):
 			c.JSON(http.StatusBadRequest, utils.NewErrorResponse(400, "Bad Request",
 				"Unsupported artifact kind: "+req.Configuration.Kind))

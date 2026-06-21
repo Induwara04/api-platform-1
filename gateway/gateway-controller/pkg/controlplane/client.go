@@ -4126,7 +4126,11 @@ func (c *Client) recordArtifactSyncStatus(cfg *models.StoredConfig, cpArtifactID
 		}
 		return
 	}
-	if dbErr := c.db.UpdateCPSyncStatus(cfg.UUID, cpArtifactID, models.CPSyncStatusSuccess, ""); dbErr != nil {
+	effectiveCPArtifactID := cpArtifactID
+	if effectiveCPArtifactID == "" {
+		effectiveCPArtifactID = cfg.CPArtifactID
+	}
+	if dbErr := c.db.UpdateCPSyncStatus(cfg.UUID, effectiveCPArtifactID, models.CPSyncStatusSuccess, ""); dbErr != nil {
 		c.logger.Debug("Failed to record artifact CP sync success",
 			slog.String("artifact_id", cfg.UUID), slog.Any("error", dbErr))
 	}

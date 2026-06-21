@@ -308,9 +308,13 @@ func (s *ArtifactImportService) writeDeployment(ictx *ImportContext, artifactUUI
 }
 
 // resolveImportProject extracts the project identifier from the k8s-shaped metadata.
-// The project is identified by the domain-prefixed project-id annotation.
+// The project is identified by the domain-prefixed project-id annotation or the label as a fallback.
 func resolveImportProject(md dto.ArtifactImportMetadata) string {
-	return md.Annotations[commonconstants.AnnotationProjectID]
+	projectId := md.Annotations[commonconstants.AnnotationProjectID]
+	if projectId == "" {
+		projectId = md.Labels[commonconstants.DeprecatedLabelProjectID]
+	}
+	return projectId
 }
 
 // shouldWriteMetadata decides whether an importer may write artifact metadata for

@@ -95,14 +95,12 @@ func (i *llmProxyImporter) Import(ctx *ImportContext) (*ImportResult, error) {
 		existing.Name = importDisplayName(ctx)
 		existing.Version = version
 		existing.ProjectUUID = ctx.ProjectID
-		if cfg.Provider != "" {
-			// Resolve the (possibly changed) provider handle to its CP UUID before persisting.
-			providerUUID, err := i.resolveProviderUUID(cfg.Provider, ctx.OrgID)
-			if err != nil {
-				return nil, err
-			}
-			existing.ProviderUUID = providerUUID
+		// Resolve the (possibly changed) provider handle to its CP UUID before persisting.
+		providerUUID, err := i.resolveProviderUUID(cfg.Provider, ctx.OrgID)
+		if err != nil {
+			return nil, err
 		}
+		existing.ProviderUUID = providerUUID
 		existing.Configuration = cfg
 	} else {
 		// CP-owned (or non-syncing gateway): only update gateway-specific upstream auth.

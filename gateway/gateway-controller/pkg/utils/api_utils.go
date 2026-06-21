@@ -985,20 +985,27 @@ func structToMap(v any) (map[string]interface{}, error) {
 	return m, nil
 }
 
-// hasProjectAnnotation reports whether the configuration carries a project on its
-// metadata via the project-id annotation. The project is never defaulted;
+// hasProjectMetadata reports whether the configuration carries a project on its
+// metadata via the project-id annotation or the label as a fallback. The project is never defaulted;
 // project-scoped artifacts must declare it explicitly in the CR.
-func hasProjectAnnotation(cfg map[string]interface{}) bool {
+func hasProjectMetadata(cfg map[string]interface{}) bool {
 	md, _ := cfg["metadata"].(map[string]interface{})
 	if md == nil {
 		return false
 	}
 	anns, _ := md["annotations"].(map[string]interface{})
-	if anns == nil {
-		return false
+	if anns != nil {
+		if v, _ := anns[commonconstants.AnnotationProjectID].(string); v != "" {
+			return true
+		}
 	}
-	v, _ := anns[commonconstants.AnnotationProjectID].(string)
-	return v != ""
+	labels, _ := md["labels"].(map[string]interface{})
+	if labels != nil {
+		if v, _ := labels[commonconstants.DeprecatedLabelProjectID].(string); v != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // PushArtifact pushes a gateway-created/updated artifact of any kind to the control
@@ -1015,10 +1022,10 @@ func (s *APIUtilsService) PushArtifact(artifactID string, artifact *models.Store
 		return "", fmt.Errorf("failed to encode artifact configuration: %w", err)
 	}
 
-	// Project-scoped kinds must declare their project via the project-id annotation in
+	// Project-scoped kinds must declare their project via the project-id annotation or label in
 	// the CR. The project is never assumed or defaulted: if it is missing, fail the push
 	// so the gateway operator must set it explicitly. Organization-level kinds carry none.
-	if !isOrgLevelKind(artifact.Kind) && !hasProjectAnnotation(configuration) {
+	if !isOrgLevelKind(artifact.Kind) && !hasProjectMetadata(configuration) {
 		s.logger.Error("Cannot push project-scoped artifact to the control plane: missing project annotation",
 			slog.String("artifact_id", artifact.UUID),
 			slog.String("kind", artifact.Kind),

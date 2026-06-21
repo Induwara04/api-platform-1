@@ -20,11 +20,13 @@ package controlplane
 
 import (
 	"encoding/json"
+	api "github.com/wso2/api-platform/gateway/gateway-controller/pkg/api/management"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	commonconstants "github.com/wso2/api-platform/common/constants"
 	"github.com/wso2/api-platform/gateway/gateway-controller/pkg/models"
@@ -131,11 +133,66 @@ func TestPushGatewayArtifactsToControlPlane_GatedOff(t *testing.T) {
 	defer server.Close()
 	client.apiUtilsService.SetBaseURL(server.URL)
 
+	restCR := map[string]any{
+		"apiVersion": api.RestAPIApiVersionGatewayApiPlatformWso2Comv1alpha1,
+		"kind":       models.KindRestApi,
+		"metadata": map[string]any{
+			"name": "petstore-api-v1.0",
+			"annotations": map[string]any{
+				commonconstants.AnnotationArtifactID: "019d953f-d386-7a64-4444-1869a28292e0",
+				commonconstants.AnnotationProjectID:  "test-project",
+			},
+		},
+		"spec": map[string]any{
+			"displayName": "PetStore API test",
+			"version":     "v1.0",
+			"context":     "/petstoretest",
+			"upstream": map[string]any{
+				"main": map[string]any{"url": "http://petstore.swagger.io/v2"},
+			},
+			"policies": []map[string]any{
+				{
+					"name":    "api-key-auth",
+					"version": "v1",
+					"params":  map[string]any{"key": "X-API-Key", "in": "header"},
+				},
+				{
+					"name":    "set-headers",
+					"version": "v1",
+					"params": map[string]any{
+						"request": map[string]any{
+							"headers": []map[string]any{{"name": "X-Client-Version", "value": "1.2.3"}},
+						},
+					},
+				},
+			},
+			"operations": []map[string]any{
+				{"method": "GET", "path": "/pet/{petId}"},
+				{"method": "POST", "path": "/pet"},
+				{"method": "PUT", "path": "/pet"},
+				{"method": "DELETE", "path": "/pet/{petId}"},
+				{"method": "GET", "path": "/store/inventory"},
+				{"method": "POST", "path": "/store/order"},
+			},
+		},
+	}
+
+	now := time.Now()
 	if err := client.db.SaveConfig(&models.StoredConfig{
-		UUID:         "gw-artifact-2",
-		Kind:         models.KindRestApi,
-		Origin:       models.OriginGatewayAPI,
-		DesiredState: models.StateDeployed,
+		UUID:                "gw-artifact-2",
+		Kind:                models.KindRestApi,
+		Handle:              "petstore-api-v1.0",
+		DisplayName:         "PetStore API test",
+		Version:             "v1.0",
+		Configuration:       restCR,
+		SourceConfiguration: restCR,
+		DesiredState:        models.StateDeployed,
+		DeploymentID:        "deployment-petstore-1",
+		Origin:              models.OriginGatewayAPI,
+		CreatedAt:           now,
+		UpdatedAt:           now,
+		DeployedAt:          &now,
+		CPSyncStatus:        models.CPSyncStatusPending,
 	}); err != nil {
 		t.Fatalf("seed config: %v", err)
 	}

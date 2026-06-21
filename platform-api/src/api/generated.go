@@ -4261,9 +4261,6 @@ type AddGatewaysToAPIJSONRequestBody = AddGatewaysToAPIJSONBody
 // PublishRESTAPIToDevPortalJSONRequestBody defines body for PublishRESTAPIToDevPortal for application/json ContentType.
 type PublishRESTAPIToDevPortalJSONRequestBody = PublishToDevPortalRequest
 
-// UnpublishRESTAPIFromDevPortalJSONRequestBody defines body for UnpublishRESTAPIFromDevPortal for application/json ContentType.
-type UnpublishRESTAPIFromDevPortalJSONRequestBody = UnpublishFromDevPortalRequest
-
 // CreateSubscriptionPlanJSONRequestBody defines body for CreateSubscriptionPlan for application/json ContentType.
 type CreateSubscriptionPlanJSONRequestBody = CreateSubscriptionPlanRequest
 
