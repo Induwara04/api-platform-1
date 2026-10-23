@@ -11,14 +11,40 @@
  * associated services.
  */
 
+import type { PolicyForm, ViewNode } from './engine';
+
+/**
+ * A sub-schema used in a condition or a combinator branch (anyOf / oneOf / allOf /
+ * if / then / else / not). Branches usually only say which keys must be present
+ * and what value a sibling has.
+ */
+export interface SchemaCondition {
+  required?: string[];
+  properties?: Record<string, Partial<ParameterSchema> & { const?: unknown }>;
+  not?: SchemaCondition;
+  anyOf?: SchemaCondition[];
+  oneOf?: SchemaCondition[];
+  allOf?: SchemaCondition[];
+  if?: SchemaCondition;
+  then?: SchemaCondition;
+  else?: SchemaCondition;
+  minLength?: number;
+  minItems?: number;
+  minProperties?: number;
+}
+
 /**
  * JSON Schema-like structure parsed from YAML policy definitions
  */
 export interface ParameterSchema {
   type: 'object' | 'array' | 'string' | 'boolean' | 'number' | 'integer';
+  title?: string;
   description?: string;
   default?: unknown;
+  const?: unknown;
   enum?: string[];
+  format?: string;
+  examples?: unknown[];
   properties?: Record<string, ParameterSchema>;
   items?: ParameterSchema;
   required?: string[];
@@ -28,34 +54,25 @@ export interface ParameterSchema {
   pattern?: string;
   minItems?: number;
   maxItems?: number;
+  uniqueItems?: boolean;
+  contains?: SchemaCondition;
+  minProperties?: number;
+  maxProperties?: number;
   minimum?: number;
   maximum?: number;
   'x-wso2-policy-advanced-param'?: boolean;
   'x-wso2-policy-deprecated-param'?: boolean;
-  anyOf?: Array<{
-    required?: string[];
-    properties?: Record<string, { const?: unknown }>;
-  }>;
-}
-
-/**
- * Tree node for rendering the parameter schema
- */
-export interface SchemaTreeNode {
-  id: string; // Unique identifier for React keys
-  path: string; // Full dot-notation path: "request.jsonPath" or "requestHeaders.0.action"
-  name: string; // Display name (property key)
-  schema: ParameterSchema;
-  depth: number;
-  isRequired: boolean;
-  isExpanded?: boolean;
-  children?: SchemaTreeNode[];
-  // Array-specific
-  isArrayContainer?: boolean;
-  isArrayItem?: boolean;
-  arrayIndex?: number;
-  parentArrayPath?: string;
-  isAdvanced?: boolean;
+  'x-wso2-policy-property-order'?: string[];
+  'wso2/defaultValue'?: string;
+  // Cross-field rules. The editor turns these into choice selectors, fields that
+  // appear only when another field has a given value, and validation.
+  anyOf?: SchemaCondition[];
+  oneOf?: SchemaCondition[];
+  allOf?: SchemaCondition[];
+  not?: SchemaCondition;
+  if?: SchemaCondition;
+  then?: SchemaCondition;
+  else?: SchemaCondition;
 }
 
 /**
@@ -64,6 +81,7 @@ export interface SchemaTreeNode {
 export interface PolicyDefinition {
   name: string;
   version: string;
+  displayName?: string;
   description: string;
   parameters: ParameterSchema;
   systemParameters?: ParameterSchema;
@@ -83,12 +101,12 @@ export interface ValidationError {
 }
 
 /**
- * Props for field renderers
+ * Props for field renderers. `node` is the engine's view of one field: its
+ * schema, current value, whether it is visible/required, and its errors.
  */
 export interface FieldRendererProps {
-  node: SchemaTreeNode;
-  value: unknown;
-  onChange: (path: string, value: unknown) => void;
+  node: ViewNode;
+  form: PolicyForm;
   error?: string;
   disabled?: boolean;
 }

@@ -16,3 +16,6 @@ export { default as SchemaTree } from './SchemaTree';
 export * from './types';
 export * from './schemaUtils';
 export * from './yamlParser';
+// Form engine: turns a policy definition into fields, rules, validation and output
+export { createPolicyForm, buildModel } from './engine';
+export type { PolicyForm, PolicyFormModel, Resolution, ViewNode } from './engine';

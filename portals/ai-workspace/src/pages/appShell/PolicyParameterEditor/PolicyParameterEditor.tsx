@@ -11,24 +11,14 @@
  * associated services.
  */
 
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { Alert, Box, Button, Typography } from '@wso2/oxygen-ui';
+import React, { useState, useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
+import { Alert, Box, Button, Chip, Typography, Card, CardContent, Checkbox, FormControlLabel } from '@wso2/oxygen-ui';
+import { ParameterValues, PolicyDefinition } from './types';
 import {
-  ParameterSchema,
-  ParameterValues,
-  PolicyDefinition,
-  ValidationError,
-} from './types';
-import {
-  initializeDefaultValues,
-  setValueByPath,
-  getValueByPath,
-  createDefaultArrayItem,
-  deleteValueByPath,
-  coerceValuesToSchemaTypes,
-  omitOptionalEmptyValues,
-  isTemplateExpression,
-} from './schemaUtils';
+  createPolicyForm,
+  type PolicyDefinition as EngineDefinition,
+  type Resolution,
+} from './engine';
 import SchemaTree from './SchemaTree';
 import { useStyles } from './styles';
 
@@ -103,7 +93,7 @@ const TruncatedHeaderDescription: React.FC<{
   const needsTruncation = lineCount > MAX_DESCRIPTION_LINES;
 
   if (!needsTruncation) {
-    return <Typography sx={{ fontSize: '0.8rem' }}>{formatted}</Typography>;
+    return <Typography sx={classes.headerDescription}>{formatted}</Typography>;
   }
 
   return (
@@ -144,382 +134,31 @@ interface PolicyParameterEditorProps {
   readOnly?: boolean;
 }
 
-function isDisabledByAnyOf(
-  schema: ParameterSchema,
-  values: ParameterValues,
-  path: string
-): boolean {
-  const supportsDisabled = schema.anyOf?.some(
-    (entry) => entry.properties?.enabled?.const === false
+/**
+ * Mirrors the old "level one" check that keeps Add/Update disabled: every
+ * required top-level field has a value (a required list has at least one item)
+ * and every top-level "configure at least one" group has a selection.
+ */
+function isLevelOneValid(resolution: Resolution): boolean {
+  const topLevel = resolution.errors.some(
+    (e) => e.path.length <= 1 && /^(Required|Select at least)/.test(e.message)
   );
-  return (
-    supportsDisabled === true &&
-    getValueByPath(values, `${path}.enabled`) === false
+  if (topLevel) return false;
+  return !(resolution.view.children ?? []).some(
+    (c) =>
+      c.visible &&
+      c.required &&
+      (c.field.kind === 'list' || c.field.kind === 'objectList' || c.field.kind === 'multiselect') &&
+      (c.items?.length ?? 0) === 0
   );
-}
-
-/**
- * Validates required fields in the schema
- */
-function validateRequiredFields(
-  schema: ParameterSchema,
-  values: ParameterValues,
-  parentPath: string = ''
-): ValidationError[] {
-  const errors: ValidationError[] = [];
-
-  if (schema.type === 'object' && schema.properties) {
-    const required = schema.required || [];
-
-    Object.entries(schema.properties).forEach(([key, propSchema]) => {
-      const path = parentPath ? `${parentPath}.${key}` : key;
-      const value = getValueByPath(values, path);
-
-      // Check required fields
-      if (required.includes(key)) {
-        if (value === undefined || value === null || value === '') {
-          errors.push({
-            path,
-            message: `This field is required`,
-          });
-        }
-      }
-
-      if (
-        propSchema.type === 'object' &&
-        propSchema.properties &&
-        !isDisabledByAnyOf(propSchema, values, path)
-      ) {
-        const nestedErrors = validateRequiredFields(propSchema, values, path);
-        errors.push(...nestedErrors);
-      }
-
-      // Validate array items
-      if (
-        propSchema.type === 'array' &&
-        propSchema.items &&
-        Array.isArray(value)
-      ) {
-        value.forEach((_, index) => {
-          const itemPath = `${path}.${index}`;
-          if (
-            propSchema.items!.type === 'object' &&
-            !isDisabledByAnyOf(propSchema.items!, values, itemPath)
-          ) {
-            const itemErrors = validateRequiredFields(
-              propSchema.items!,
-              values,
-              itemPath
-            );
-            errors.push(...itemErrors);
-          }
-        });
-      }
-    });
-  }
-
-  return errors;
-}
-
-/**
- * Validates a single leaf value against the format constraints declared in its
- * schema (pattern, minLength/maxLength, minimum/maximum). Returns an error
- * message, or null when the value satisfies every constraint.
- *
- * Empty/absent values are treated as valid here — presence is the concern of
- * validateRequiredFields. Template expressions (e.g. {{ env "LIMIT" }}) are
- * also skipped, consistent with coerceValuesToSchemaTypes.
- */
-function validateValueConstraints(
-  schema: ParameterSchema,
-  value: unknown
-): string | null {
-  if (value === undefined || value === null || value === '') {
-    return null;
-  }
-
-  // Template expressions are resolved by the gateway at deploy time, so their
-  // runtime values cannot be checked against literal-value constraints here.
-  if (isTemplateExpression(value)) {
-    return null;
-  }
-
-  if (schema.type === 'string' && typeof value === 'string') {
-    if (schema.minLength !== undefined && value.length < schema.minLength) {
-      return `Must be at least ${schema.minLength} character(s)`;
-    }
-    if (schema.maxLength !== undefined && value.length > schema.maxLength) {
-      return `Must be at most ${schema.maxLength} character(s)`;
-    }
-    if (schema.pattern) {
-      let regex: RegExp | null = null;
-      try {
-        regex = new RegExp(schema.pattern);
-      } catch {
-        // An unparseable pattern is a policy authoring problem, not a user
-        // input problem — do not block the user on it.
-        regex = null;
-      }
-      if (regex && !regex.test(value)) {
-        return 'Value does not match the required format';
-      }
-    }
-    return null;
-  }
-
-  if (schema.type === 'number' || schema.type === 'integer') {
-    const num =
-      typeof value === 'number'
-        ? value
-        : typeof value === 'string' && value.trim() !== ''
-          ? Number(value)
-          : Number.NaN;
-    if (
-      !Number.isFinite(num) ||
-      (schema.type === 'integer' && !Number.isInteger(num))
-    ) {
-      return schema.type === 'integer'
-        ? 'Must be a valid integer'
-        : 'Must be a valid number';
-    }
-    if (schema.minimum !== undefined && num < schema.minimum) {
-      return `Must be at least ${schema.minimum}`;
-    }
-    if (schema.maximum !== undefined && num > schema.maximum) {
-      return `Must be at most ${schema.maximum}`;
-    }
-  }
-
-  return null;
-}
-
-/**
- * Recursively validates format constraints declared anywhere in the schema.
- *
- * Only constraints on fields that render an inline error (leaf fields and
- * simple string/number arrays) are reported, so every returned error is
- * visible to the user next to the offending field.
- */
-function validateConstraints(
-  schema: ParameterSchema,
-  values: ParameterValues,
-  parentPath: string = ''
-): ValidationError[] {
-  const errors: ValidationError[] = [];
-
-  if (schema.type !== 'object' || !schema.properties) {
-    return errors;
-  }
-
-  const minSchema = schema.properties.min;
-  const maxSchema = schema.properties.max;
-  if (
-    ['number', 'integer'].includes(minSchema?.type) &&
-    ['number', 'integer'].includes(maxSchema?.type)
-  ) {
-    const minPath = parentPath ? `${parentPath}.min` : 'min';
-    const maxPath = parentPath ? `${parentPath}.max` : 'max';
-    const minValue = getValueByPath(values, minPath);
-    const maxValue = getValueByPath(values, maxPath);
-    const min = Number(minValue);
-    const max = Number(maxValue);
-    if (
-      minValue != null &&
-      minValue !== '' &&
-      maxValue != null &&
-      maxValue !== '' &&
-      Number.isFinite(min) &&
-      Number.isFinite(max) &&
-      min > max
-    ) {
-      errors.push({
-        path: maxPath,
-        message: 'Maximum value must be greater than or equal to minimum value',
-      });
-    }
-  }
-
-  Object.entries(schema.properties).forEach(([key, propSchema]) => {
-    const path = parentPath ? `${parentPath}.${key}` : key;
-    const value = getValueByPath(values, path);
-
-    if (propSchema.type === 'object' && propSchema.properties) {
-      errors.push(...validateConstraints(propSchema, values, path));
-      return;
-    }
-
-    if (propSchema.type === 'array' && propSchema.items) {
-      if (!Array.isArray(value)) {
-        return;
-      }
-      const itemType = propSchema.items.type;
-      const isSimpleArray = itemType === 'string' || itemType === 'number';
-
-      // minItems/maxItems only for simple arrays, which surface an inline error.
-      if (isSimpleArray) {
-        if (
-          propSchema.minItems !== undefined &&
-          value.length < propSchema.minItems
-        ) {
-          errors.push({
-            path,
-            message: `Must have at least ${propSchema.minItems} item(s)`,
-          });
-        } else if (
-          propSchema.maxItems !== undefined &&
-          value.length > propSchema.maxItems
-        ) {
-          errors.push({
-            path,
-            message: `Must have at most ${propSchema.maxItems} item(s)`,
-          });
-        }
-      }
-
-      value.forEach((item, index) => {
-        if (propSchema.items!.type === 'object') {
-          // Object array items render their own fields, each with an inline
-          // error keyed by the item path.
-          const itemPath = `${path}.${index}`;
-          errors.push(...validateConstraints(propSchema.items!, values, itemPath));
-        } else if (isSimpleArray && !errors.some((e) => e.path === path)) {
-          // Simple (string/number) arrays render a single tag input whose
-          // inline error lives at the container path, so report the first
-          // failing item there rather than at an item path that has no field.
-          const message = validateValueConstraints(propSchema.items!, item);
-          if (message) {
-            errors.push({ path, message });
-          }
-        }
-      });
-      return;
-    }
-
-    // Leaf field
-    const message = validateValueConstraints(propSchema, value);
-    if (message) {
-      errors.push({ path, message });
-    }
-  });
-
-  return errors;
-}
-
-/**
- * Validates ONLY level-one required fields.
- * Also validates non-advanced optional objects with anyOf constraints:
- * if a boolean field (e.g. "enabled") is set to true, all other
- * anyOf-required fields (e.g. "schema") must also be filled.
- */
-function validateLevelOneRequiredFields(
-  schema: ParameterSchema,
-  values: ParameterValues
-): boolean {
-  if (schema.type !== 'object' || !schema.properties) {
-    return true;
-  }
-
-  const required = schema.required || [];
-
-  // Check only top-level required fields
-  for (const key of required) {
-    const value = getValueByPath(values, key);
-
-    // Check if value is truly empty
-    if (value === undefined || value === null || value === '') {
-      return false; // Validation failed
-    }
-
-    // Check if array is empty
-    if (Array.isArray(value) && value.length === 0) {
-      return false; // Validation failed
-    }
-  }
-
-  // For non-advanced optional objects with anyOf constraints:
-  // 1. At least one such object must have an anyOf field satisfied
-  // 2. If a boolean field is enabled (true), other anyOf-required fields must also be filled
-  let anyOfObjects = 0;
-  let anyOfSatisfied = 0;
-
-  for (const [key, propSchema] of Object.entries(schema.properties)) {
-    // Skip advanced params and required (already validated above)
-    if (propSchema['x-wso2-policy-advanced-param'] === true) continue;
-    if (required.includes(key)) continue;
-    if (propSchema.type !== 'object' || !propSchema.properties) continue;
-    if (!propSchema.anyOf || propSchema.anyOf.length === 0) continue;
-
-    anyOfObjects++;
-
-    const objectValue = getValueByPath(values, key) as
-      | ParameterValues
-      | undefined;
-    if (!objectValue) continue;
-
-    // Collect all anyOf required field names
-    const anyOfRequiredFields: string[] = [];
-    propSchema.anyOf.forEach((entry) => {
-      if (entry.required) {
-        anyOfRequiredFields.push(...entry.required);
-      }
-    });
-
-    if (anyOfRequiredFields.length === 0) continue;
-
-    // Check if any boolean field in the anyOf set is enabled (true)
-    const hasEnabledBoolean = anyOfRequiredFields.some((fieldName) => {
-      const fieldSchema = propSchema.properties![fieldName];
-      return fieldSchema?.type === 'boolean' && objectValue[fieldName] === true;
-    });
-
-    // Check if any non-boolean anyOf field has a value
-    const hasNonBooleanValue = anyOfRequiredFields.some((fieldName) => {
-      const fieldSchema = propSchema.properties![fieldName];
-      if (fieldSchema?.type === 'boolean') return false;
-      const fieldValue = objectValue[fieldName];
-      return (
-        fieldValue !== undefined &&
-        fieldValue !== null &&
-        fieldValue !== '' &&
-        !(Array.isArray(fieldValue) && fieldValue.length === 0)
-      );
-    });
-
-    if (hasEnabledBoolean || hasNonBooleanValue) {
-      anyOfSatisfied++;
-    }
-
-    if (hasEnabledBoolean) {
-      // All other anyOf-required fields must be filled
-      for (const fieldName of anyOfRequiredFields) {
-        const fieldSchema = propSchema.properties![fieldName];
-        if (fieldSchema?.type === 'boolean') continue; // boolean is already satisfied
-        const fieldValue = objectValue[fieldName];
-        if (
-          fieldValue === undefined ||
-          fieldValue === null ||
-          fieldValue === ''
-        ) {
-          return false;
-        }
-        if (Array.isArray(fieldValue) && fieldValue.length === 0) {
-          return false;
-        }
-      }
-    }
-  }
-
-  // If there are anyOf objects but none have any field satisfied, disable the button
-  if (anyOfObjects > 0 && anyOfSatisfied === 0) {
-    return false;
-  }
-
-  return true; // All level-one required fields are filled
 }
 
 /**
  * PolicyParameterEditor - A dynamic form editor for policy parameters
  * based on JSON Schema-like definitions from YAML policy files.
+ *
+ * The form logic (which fields show, which are required, defaults, validation,
+ * and the values to submit) comes from ./engine. This component renders it.
  */
 const PolicyParameterEditor: React.FC<PolicyParameterEditorProps> = ({
   policyDefinition,
@@ -531,153 +170,63 @@ const PolicyParameterEditor: React.FC<PolicyParameterEditorProps> = ({
   readOnly = false,
 }) => {
   const classes = useStyles();
-  const { name, description, parameters } = policyDefinition;
+  const { name, description } = policyDefinition;
 
-  // Use policyDisplayName if provided, otherwise fall back to name from definition
-  const displayName = policyDisplayName || name;
+  // Use policyDisplayName if provided, then the definition's displayName, then its name
+  const displayName = policyDisplayName || policyDefinition.displayName || name;
 
-  // Initialize form values with defaults
-  const [values, setValues] = useState<ParameterValues>(() =>
-    initializeDefaultValues(parameters, existingValues)
+  // One form per policy definition. existingValues seeds it; defaults fill the rest.
+  const form = useMemo(
+    () =>
+      createPolicyForm(policyDefinition as unknown as EngineDefinition, {
+        initialConfig: existingValues,
+      }),
+    // existingValues changes are applied by the effect below
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [policyDefinition]
   );
+  const resolution = useSyncExternalStore(form.subscribe, form.getResolution, form.getResolution);
 
-  // Validation errors
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  // Errors are shown after the first submit attempt, as before
+  const [showErrors, setShowErrors] = useState(false);
 
-  // Check if level-one required fields are filled (for button disable state)
-  const isLevelOneValid = useMemo(() => {
-    return validateLevelOneRequiredFields(parameters, values);
-  }, [parameters, values]);
-
-  // Compute anyOf alert message
-  const anyOfMessage = useMemo(() => {
-    // Case 1: Parent-level anyOf (e.g. anyOf: [{ required: [request] }, { required: [response] }])
-    if (parameters.anyOf && parameters.anyOf.length > 0) {
-      const requiredItems = parameters.anyOf
-        .flatMap((entry) => entry.required || [])
-        .filter((v, i, a) => a.indexOf(v) === i);
-      if (requiredItems.length > 0) {
-        return `At least one of ${requiredItems.join(
-          ', '
-        )} must be configured.`;
-      }
-    }
-
-    // Case 2: Property-level anyOf (anyOf inside child properties like request/response)
-    // Collect property names that have anyOf constraints
-    if (parameters.properties) {
-      const propsWithAnyOf = Object.keys(parameters.properties).filter(
-        (key) => {
-          const propSchema = parameters.properties![key];
-          return (
-            propSchema.type === 'object' &&
-            propSchema.anyOf &&
-            propSchema.anyOf.length > 0
-          );
-        }
-      );
-      if (propsWithAnyOf.length > 0) {
-        return `At least one of ${propsWithAnyOf.join(
-          ', '
-        )} must be configured.`;
-      }
-    }
-
-    return null;
-  }, [parameters]);
+  const canSubmit = useMemo(() => isLevelOneValid(resolution), [resolution]);
 
   useEffect(() => {
     if (existingValues) {
-      setValues(initializeDefaultValues(parameters, existingValues));
+      form.reset(existingValues);
     }
-  }, [existingValues, parameters]);
-
-  // Handle field value changes
-  const handleChange = useCallback((path: string, value: unknown) => {
-    setValues((prev) => setValueByPath(prev, path, value));
-    // Clear error for this field
-    setErrors((prev) => {
-      if (prev[path]) {
-        const newErrors = { ...prev };
-        delete newErrors[path];
-        return newErrors;
-      }
-      return prev;
-    });
-  }, []);
-
-  // Handle adding array items
-  const handleAddArrayItem = useCallback(
-    (arrayPath: string, itemSchema: ParameterSchema) => {
-      setValues((prev) => {
-        const currentArray =
-          (getValueByPath(prev, arrayPath) as unknown[]) || [];
-        const newItem = createDefaultArrayItem(itemSchema);
-        return setValueByPath(prev, arrayPath, [...currentArray, newItem]);
-      });
-    },
-    []
-  );
-
-  // Handle deleting array items
-  const handleDeleteArrayItem = useCallback(
-    (arrayPath: string, index: number) => {
-      setValues((prev) => {
-        const currentArray =
-          (getValueByPath(prev, arrayPath) as unknown[]) || [];
-        const newArray = currentArray.filter((_, i) => i !== index);
-        return setValueByPath(prev, arrayPath, newArray);
-      });
-    },
-    []
-  );
-
-  // Handle cancel: close drawer if editing, reset form if adding new
-  const handleCancel = useCallback(() => {
-    if (existingValues) {
-      onCancel();
-    } else {
-      setValues(initializeDefaultValues(parameters));
-      setErrors({});
-    }
-  }, [existingValues, onCancel, parameters]);
+  }, [existingValues, form]);
 
   // Handle form submission
   const handleSubmit = useCallback(() => {
-    // Validate required fields first, then format constraints (pattern,
-    // length, numeric bounds, array size). Required errors take precedence
-    const errorMap: Record<string, string> = {};
-    validateRequiredFields(parameters, values).forEach((err) => {
-      errorMap[err.path] = err.message;
-    });
-    validateConstraints(parameters, values).forEach((err) => {
-      if (!errorMap[err.path]) {
-        errorMap[err.path] = err.message;
-      }
-    });
-
-    if (Object.keys(errorMap).length > 0) {
-      setErrors(errorMap);
+    const current = form.getResolution();
+    if (!current.valid) {
+      setShowErrors(true);
       return;
     }
+    setShowErrors(false);
+    // `config` holds typed values (numbers, booleans, objects), leaves out fields
+    // hidden by a choice or rule, and omits optional values that were never set.
+    onSubmit(current.config as ParameterValues);
+  }, [form, onSubmit]);
 
-    // Clear errors and submit
-    setErrors({});
-    // Coerce values to their schema-declared types so booleans, numbers,
-    // and objects are not accidentally sent as strings
-    const coercedValues = coerceValuesToSchemaTypes(parameters, values);
-    const sanitizedValues = omitOptionalEmptyValues(
-      parameters,
-      coercedValues
-    );
-    onSubmit(sanitizedValues);
-  }, [parameters, values, onSubmit]);
+  const errorCount = resolution.errors.length;
 
   return (
-    <Box sx={classes.root}>
+    <Box sx={[classes.root, { containerType: 'inline-size', containerName: 'policy-editor' }]}>
       {/* Header */}
       <Box sx={classes.header}>
-        <Typography variant="h5">{displayName}</Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+          <Typography variant="h5" sx={classes.headerTitle}>{displayName}</Typography>
+          <Chip label={`v${policyDefinition.version.replace(/^v+/i, '')}`} size="small" variant="outlined"
+            sx={{ fontFamily: 'monospace', fontSize: '0.7rem', color: 'text.secondary' }} />
+          <FormControlLabel
+            label="Show all errors"
+            sx={{ ml: 'auto', mr: 0, '& .MuiFormControlLabel-label': { fontSize: '0.75rem' } }}
+            control={<Checkbox size="small" checked={showErrors} onChange={(_, checked) => setShowErrors(checked)} />}
+          />
+        </Box>
         {description && (
           <TruncatedHeaderDescription
             description={description}
@@ -686,23 +235,58 @@ const PolicyParameterEditor: React.FC<PolicyParameterEditorProps> = ({
         )}
       </Box>
 
-      {/* AnyOf Info Alert */}
-      {anyOfMessage && (
-        <Alert severity="info" sx={{ mb: 1 }}>
-          {anyOfMessage}
+      {/* Shown after a submit attempt that found problems */}
+      {showErrors && errorCount > 0 && (
+        <Alert severity="error" sx={{ mb: 1 }} data-testid="policy-param-errors">
+          {errorCount === 1
+            ? 'Fix the highlighted field to continue.'
+            : `Fix the ${errorCount} highlighted fields to continue.`}
         </Alert>
       )}
 
-      {/* Schema Tree */}
-      <SchemaTree
-        schema={parameters}
-        values={values}
-        onChange={handleChange}
-        onAddArrayItem={handleAddArrayItem}
-        onDeleteArrayItem={handleDeleteArrayItem}
-        errors={errors}
-        disabled={disabled || readOnly}
-      />
+      <Box sx={{
+        display: 'grid',
+        gridTemplateColumns: 'minmax(0, 1fr)',
+        '@container policy-editor (min-width: 760px)': {
+          gridTemplateColumns: 'minmax(0, 1fr) 200px',
+        },
+        gap: 2,
+        alignItems: 'start',
+      }}>
+        <Card>
+          <CardContent>
+            <SchemaTree
+              view={resolution.view}
+              form={form}
+              showErrors={showErrors}
+              disabled={disabled || readOnly}
+            />
+          </CardContent>
+        </Card>
+        <Card component="aside" aria-label="Policy validation status" data-testid="policy-status">
+          <CardContent sx={{ p: 1.25, '&:last-child': { pb: 1.25 } }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: errorCount ? 1 : 0 }}>
+              <Typography variant="subtitle2" fontWeight={600} sx={{ fontSize: '0.75rem' }}>Status</Typography>
+              <Chip size="small" sx={{ height: 20, fontSize: '0.6875rem' }} color={errorCount ? 'default' : 'success'}
+                variant={errorCount ? 'outlined' : 'filled'} label={errorCount ? `${errorCount} to fix` : 'Valid'} />
+            </Box>
+            <Box aria-live="polite" aria-atomic="true">
+              {errorCount > 0 && (
+                <Box component="ul" sx={{ listStyle: 'none', p: 0, m: 0 }}>
+                  {resolution.errors.map((error, index) => (
+                    <Box component="li" key={`${error.pathKey}-${index}`} sx={{ mb: 0.5, lineHeight: 1.4, overflowWrap: 'anywhere', '&:last-child': { mb: 0 } }}>
+                      <Typography component="span" variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.6875rem', mr: 0.75 }}>
+                        {error.path.join('.') || 'Parameters'}
+                      </Typography>
+                      <Typography component="span" variant="body2" sx={{ fontSize: '0.6875rem', color: 'error.main' }}>{error.message}</Typography>
+                    </Box>
+                  ))}
+                </Box>
+              )}
+            </Box>
+          </CardContent>
+        </Card>
+      </Box>
 
       {/* Action Buttons */}
       <Box sx={classes.buttonContainer}>
@@ -721,7 +305,7 @@ const PolicyParameterEditor: React.FC<PolicyParameterEditorProps> = ({
             color="primary"
             onClick={handleSubmit}
             data-testid="policy-param-submit"
-            disabled={disabled || !isLevelOneValid}
+            disabled={disabled || !canSubmit}
           >
             {existingValues ? 'Update' : 'Add'}
           </Button>

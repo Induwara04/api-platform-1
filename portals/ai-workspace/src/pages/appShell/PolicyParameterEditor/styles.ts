@@ -12,7 +12,7 @@
  */
 
 import { useMemo } from 'react';
-import { useTheme } from '@wso2/oxygen-ui';
+import { alpha, useTheme } from '@wso2/oxygen-ui';
 
 export const useStyles = () => {
   const theme = useTheme();
@@ -30,13 +30,13 @@ export const useStyles = () => {
       },
       headerTitle: {
         fontWeight: 600,
-        fontSize: '1rem',
+        fontSize: '1.25rem',
         // color: theme.palette.text.primary,
       },
       headerDescription: {
         color: theme.palette.text.secondary,
         marginTop: theme.spacing(0.5),
-        // fontSize: '13px',
+        fontSize: '0.8125rem',
         lineHeight: 1.5,
         whiteSpace: 'pre-wrap',
         fontFamily: 'inherit',
@@ -45,7 +45,7 @@ export const useStyles = () => {
       headerDescriptionTruncated: {
         color: theme.palette.text.secondary,
         marginTop: theme.spacing(0.5),
-        // fontSize: '13px',
+        fontSize: '0.8125rem',
         lineHeight: 1.5,
         whiteSpace: 'pre-wrap',
         fontFamily: 'inherit',
@@ -55,37 +55,30 @@ export const useStyles = () => {
         WebkitBoxOrient: 'vertical',
         overflow: 'hidden',
       },
-      treeContainer: {
-        border: `1px solid ${theme.palette.divider}`,
-        borderRadius: theme.spacing(1),
-        padding: theme.spacing(1),
-        // backgroundColor:
-        //   (theme as { palette?: { mode?: string } }).palette?.mode === 'dark'
-        //     ? '#585858'
-        //     : 'transparent',
-      },
       // Tree node styles
       treeNode: {
-        marginBottom: theme.spacing(0.5),
+        marginBottom: theme.spacing(2),
       },
       nodeRow: {
         display: 'flex',
         alignItems: 'flex-start',
-        padding: theme.spacing(0.75, 1, 0.75, 0),
+        padding: 0,
         borderRadius: theme.spacing(0.8),
-        '&:hover': {
-          backgroundColor: theme.palette.action.hover,
-        },
       },
-      nodeRowExpanded: {
-        // backgroundColor: '#c2c2c2',
-        border: `1px solid #909090`,
+      nestedSection: {
+        borderLeft: `2px solid ${alpha(theme.palette.text.primary, 0.3)}`,
+        paddingLeft: theme.spacing(1.5),
+      },
+      nestedChildren: {
+        borderLeft: `2px solid ${alpha(theme.palette.text.primary, 0.3)}`,
+        marginTop: theme.spacing(1),
+        paddingLeft: theme.spacing(1.5),
+        '& > .MuiBox-root > .MuiBox-root:last-child': { marginBottom: 0 },
       },
       expandIcon: {
         cursor: 'pointer',
-        marginRight: theme.spacing(0.5),
-        marginTop: 2, // Align with label text
-        color: theme.palette.text.secondary,
+        padding: 0,
+        color: theme.palette.text.primary,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -121,8 +114,8 @@ export const useStyles = () => {
         marginBottom: theme.spacing(0.5),
       },
       nodeLabel: {
-        fontWeight: 500,
-        fontSize: '0.875rem',
+        fontWeight: 600,
+        fontSize: '0.8125rem',
         // color: theme.palette.text.primary,
       },
       requiredBadge: {
@@ -143,16 +136,18 @@ export const useStyles = () => {
       },
       nodeDescription: {
         fontSize: '0.75rem',
-        // color: theme.palette.text.secondary,
-        lineHeight: 1.4,
-        marginBottom: theme.spacing(1),
+        color: theme.palette.text.secondary,
+        lineHeight: 1.6,
+        marginTop: theme.spacing(0.75),
+        marginBottom: 0,
         whiteSpace: 'pre-wrap',
       },
       nodeDescriptionTruncated: {
         fontSize: '0.75rem',
         color: theme.palette.text.secondary,
-        lineHeight: 1.4,
-        marginBottom: theme.spacing(0.5),
+        lineHeight: 1.6,
+        marginTop: theme.spacing(0.75),
+        marginBottom: 0,
         whiteSpace: 'pre-wrap',
         display: '-webkit-box',
         WebkitLineClamp: 5,
@@ -186,7 +181,8 @@ export const useStyles = () => {
         },
       },
       enumSelect: {
-        minWidth: 200,
+        minWidth: 0,
+        fontSize: '0.875rem',
       },
       // Tag input styles
       tagInputContainer: {
@@ -223,7 +219,7 @@ export const useStyles = () => {
       },
       arrayItem: {
         position: 'relative',
-        border: `1px solid ${theme.palette.divider}`,
+        border: `1px solid ${alpha(theme.palette.text.primary, 0.3)}`,
         borderRadius: theme.spacing(0.5),
         padding: theme.spacing(0.5, 1),
         marginBottom: theme.spacing(0.75),
@@ -274,24 +270,27 @@ export const useStyles = () => {
       },
       // Key-value (dynamic object) styles
       keyValueRow: {
-        display: 'flex',
-        alignItems: 'center',
+        display: 'grid',
+        gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) auto',
+        alignItems: 'start',
         gap: theme.spacing(1),
         marginBottom: theme.spacing(1),
       },
       keyValueKey: {
-        flex: '1 1 40%',
+        minWidth: 0,
         '& .MuiInputBase-root': {
           fontSize: '0.875rem',
         },
       },
       keyValueValue: {
-        flex: '1 1 50%',
+        minWidth: 0,
+        '& > .MuiBox-root': { marginTop: 0 },
         '& .MuiInputBase-root': {
           fontSize: '0.875rem',
         },
       },
       keyValueDeleteButton: {
+        marginTop: theme.spacing(1),
         padding: theme.spacing(0.25),
         flexShrink: 0,
         color: theme.palette.error.main,
@@ -303,21 +302,54 @@ export const useStyles = () => {
           backgroundColor: theme.palette.error.light + '20',
         },
       },
-      // Advanced settings section
-      advancedSettingsToggle: {
-        marginTop: theme.spacing(2),
-        marginBottom: theme.spacing(1),
-        paddingTop: theme.spacing(1.5),
-        borderTop: `1px solid ${theme.palette.divider}`,
+      // Choice selector for oneOf / anyOf groups (e.g. token endpoint vs bearer token)
+      groupSelector: {
+        border: `1px solid ${alpha(theme.palette.primary.main, 0.4)}`,
+        backgroundColor: alpha(theme.palette.primary.main, 0.05),
+        borderRadius: theme.spacing(1),
+        padding: theme.spacing(1, 2),
+        margin: theme.spacing(0, 0, 2.5),
+        minWidth: 0,
       },
-      advancedSettingsToggleNoBorder: {
-        marginTop: 0,
-        paddingTop: 0,
-        borderTop: 'none',
+      groupSelectorLabel: {
+        color: theme.palette.primary.main,
+        fontWeight: 600,
+        padding: theme.spacing(0, 0.75),
+        fontSize: '0.75rem',
+        textTransform: 'uppercase',
+        letterSpacing: '0.04em',
+      },
+      choiceLabel: {
+        fontSize: '0.8rem',
+      },
+      multiSelectRow: {
+        display: 'flex',
+        flexWrap: 'wrap',
+        columnGap: theme.spacing(1),
+      },
+      monospaceInput: {
+        '& textarea': {
+          fontFamily: 'monospace',
+          fontSize: '0.8rem',
+        },
+      },
+      gatewayDefaultHint: {
+        fontSize: '0.7rem',
+        color: theme.palette.text.secondary,
+        fontStyle: 'italic',
+        marginBottom: theme.spacing(0.5),
+      },
+      sectionClearButton: {
+        padding: theme.spacing(0.25),
+        marginLeft: 'auto',
+        color: theme.palette.text.secondary,
+        '& svg': {
+          fontSize: 16,
+        },
       },
       optionalFieldsSection: {
         marginTop: theme.spacing(1),
-        paddingLeft: theme.spacing(3), // Indent to align with Advanced Settings text
+        paddingLeft: 0,
       },
     }),
     [theme]

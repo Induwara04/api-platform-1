@@ -11,24 +11,38 @@
  * associated services.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box,
   Button,
+  Checkbox,
   Chip,
   FormControl,
+  FormControlLabel,
   FormHelperText,
   IconButton,
+  InputAdornment,
   MenuItem,
   Select,
   Switch,
   TextField,
   Typography,
 } from '@wso2/oxygen-ui';
-import { Plus, Trash2 } from '@wso2/oxygen-ui-icons-react';
+import { Eye, EyeOff, Plus, Trash2 } from '@wso2/oxygen-ui-icons-react';
 import { FieldRendererProps } from './types';
 import { useStyles } from './styles';
 import { isTemplateExpression } from './schemaUtils';
+import type { Path, ViewNode } from './engine';
+
+/** Dot path used in data-testids, e.g. "request.headers.0.name" (same as before). */
+export const testPath = (path: Path): string => path.join('.');
+
+const textOf = (value: unknown): string =>
+  value === undefined || value === null ? '' : String(value);
+
+/** First error for a list: its own, or the first one on any of its items. */
+const listError = (node: ViewNode): string | undefined =>
+  node.errors[0] ?? node.items?.find((item) => item.errors.length)?.errors[0];
 
 type SimpleTagInputProps = {
   value: string[];
@@ -124,61 +138,157 @@ const SimpleTagInput: React.FC<SimpleTagInputProps> = ({
 };
 
 /**
- * Renders a string field - either as a dropdown (if enum) or text input
+ * Renders a plain or URL string field
  */
 export const StringFieldRenderer: React.FC<FieldRendererProps> = ({
   node,
-  value,
-  onChange,
+  form,
   error,
   disabled,
 }) => {
   const classes = useStyles();
-  const hasEnum = node.schema.enum && node.schema.enum.length > 0;
-
-  if (hasEnum) {
-    return (
-      <Box sx={classes.fieldContainer}>
-        <FormControl fullWidth size="small" error={!!error} disabled={disabled}>
-          <Select
-            value={(value as string) || ''}
-            onChange={(e) => onChange(node.path, e.target.value as string)}
-            displayEmpty
-            variant="outlined"
-            data-testid={`field-${node.path}`}
-            sx={classes.enumSelect}
-          >
-            <MenuItem value="">
-              <em>Select...</em>
-            </MenuItem>
-            {node.schema.enum!.map((option) => (
-              <MenuItem key={option} value={option}>
-                {option}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-        {error && <Box sx={classes.errorText}>{error}</Box>}
-      </Box>
-    );
-  }
-
+  const { field } = node;
   return (
     <Box sx={classes.fieldContainer}>
       <TextField
-        value={(value as string) || ''}
-        onChange={(e) => onChange(node.path, e.target.value)}
-        disabled={disabled}
+        value={textOf(node.value)}
+        onChange={(e) => form.setValue(node.path, e.target.value)}
+        disabled={disabled || field.readOnly}
         error={!!error}
         helperText={error}
         fullWidth
         size="small"
         sx={classes.fieldInput}
-        placeholder={node.schema.default ? String(node.schema.default) : ''}
+        placeholder={
+          field.placeholder ?? (field.hasDefault ? textOf(field.default) : '')
+        }
         inputProps={{
-          'data-testid': `field-${node.path}`,
+          'data-testid': `field-${testPath(node.path)}`,
+          maxLength: field.constraints.maxLength,
+          'aria-label': field.label,
         }}
       />
+    </Box>
+  );
+};
+
+/**
+ * Renders a credential (client secret, password, token) as a masked field
+ */
+export const SecretFieldRenderer: React.FC<FieldRendererProps> = ({
+  node,
+  form,
+  error,
+  disabled,
+}) => {
+  const classes = useStyles();
+  const [visible, setVisible] = useState(false);
+  const { field } = node;
+  return (
+    <Box sx={classes.fieldContainer}>
+      <TextField
+        type={visible ? 'text' : 'password'}
+        value={textOf(node.value)}
+        onChange={(e) => form.setValue(node.path, e.target.value)}
+        disabled={disabled || field.readOnly}
+        error={!!error}
+        helperText={error}
+        fullWidth
+        size="small"
+        sx={classes.fieldInput}
+        placeholder={field.placeholder ?? '{{ secret "handle" }}'}
+        autoComplete="off"
+        inputProps={{
+          'data-testid': `field-${testPath(node.path)}`,
+          'aria-label': field.label,
+        }}
+        InputProps={{
+          endAdornment: (
+            <InputAdornment position="end">
+              <IconButton
+                size="small"
+                onClick={() => setVisible((v) => !v)}
+                aria-label={visible ? `Hide ${field.label}` : `Show ${field.label}`}
+                data-testid={`field-${testPath(node.path)}-visibility`}
+              >
+                {visible ? <EyeOff size={14} /> : <Eye size={14} />}
+              </IconButton>
+            </InputAdornment>
+          ),
+        }}
+      />
+    </Box>
+  );
+};
+
+/**
+ * Renders long text (templates, PEM certificates, CEL expressions, JSON)
+ */
+export const TextAreaFieldRenderer: React.FC<FieldRendererProps> = ({
+  node,
+  form,
+  error,
+  disabled,
+}) => {
+  const classes = useStyles();
+  const { field } = node;
+  return (
+    <Box sx={classes.fieldContainer}>
+      <TextField
+        value={textOf(node.value)}
+        onChange={(e) => form.setValue(node.path, e.target.value)}
+        disabled={disabled || field.readOnly}
+        error={!!error}
+        helperText={error}
+        fullWidth
+        multiline
+        minRows={field.kind === 'json' ? 4 : 3}
+        size="small"
+        sx={[classes.fieldInput, classes.monospaceInput]}
+        placeholder={field.placeholder ?? (field.kind === 'json' ? '{ }' : '')}
+        inputProps={{
+          'data-testid': `field-${testPath(node.path)}`,
+          'aria-label': field.label,
+        }}
+      />
+    </Box>
+  );
+};
+
+/**
+ * Renders an enum as a dropdown
+ */
+export const SelectFieldRenderer: React.FC<FieldRendererProps> = ({
+  node,
+  form,
+  error,
+  disabled,
+}) => {
+  const classes = useStyles();
+  const { field } = node;
+  return (
+    <Box sx={classes.fieldContainer}>
+      <FormControl fullWidth size="small" error={!!error} disabled={disabled || field.readOnly}>
+        <Select
+          value={textOf(node.value)}
+          onChange={(e) => form.setValue(node.path, e.target.value as string)}
+          displayEmpty
+          variant="outlined"
+          data-testid={`field-${testPath(node.path)}`}
+          inputProps={{ 'aria-label': field.label }}
+          sx={classes.enumSelect}
+        >
+          <MenuItem value="">
+            <em>Select...</em>
+          </MenuItem>
+          {(field.options ?? []).map((option) => (
+            <MenuItem key={String(option.value)} value={String(option.value)}>
+              {option.label}
+            </MenuItem>
+          ))}
+        </Select>
+      </FormControl>
+      {error && <Box sx={classes.errorText}>{error}</Box>}
     </Box>
   );
 };
@@ -188,24 +298,23 @@ export const StringFieldRenderer: React.FC<FieldRendererProps> = ({
  */
 export const BooleanFieldRenderer: React.FC<FieldRendererProps> = ({
   node,
-  value,
-  onChange,
+  form,
   error,
   disabled,
 }) => {
   const classes = useStyles();
-
-  const checked = value === true || value === 'true';
+  const checked = node.value === true || node.value === 'true';
 
   return (
     <Box sx={classes.fieldContainer}>
       <Box sx={classes.toggleContainer}>
         <Switch
           checked={checked}
-          onChange={(e) => onChange(node.path, e.target.checked)}
-          disabled={disabled}
+          onChange={(e) => form.setValue(node.path, e.target.checked)}
+          disabled={disabled || node.field.readOnly}
           size="small"
-          data-testid={`field-${node.path}`}
+          inputProps={{ 'aria-label': node.field.label }}
+          data-testid={`field-${testPath(node.path)}`}
         />
         <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
           {checked ? 'true' : 'false'}
@@ -217,42 +326,37 @@ export const BooleanFieldRenderer: React.FC<FieldRendererProps> = ({
 };
 
 /**
- * Renders a number/integer field
+ * Renders a number/integer field. Template expressions ({{ env "LIMIT" }}) are
+ * kept as text; anything else that isn't a number is kept so validation can
+ * report it.
  */
 export const NumberFieldRenderer: React.FC<FieldRendererProps> = ({
   node,
-  value,
-  onChange,
+  form,
   error,
   disabled,
 }) => {
   const classes = useStyles();
-  const isInteger = node.schema.type === 'integer';
-  const [displayValue, setDisplayValue] = useState<string>(
-    value !== undefined && value !== '' ? String(value) : ''
-  );
+  const { field } = node;
+  const isInteger = field.kind === 'integer';
+  const [displayValue, setDisplayValue] = useState<string>(textOf(node.value));
+
+  // Follow external changes (reset, loading existing values) without fighting the
+  // user's in-progress typing ("1." still means 1).
+  useEffect(() => {
+    const external = textOf(node.value);
+    if (external !== displayValue && Number(displayValue) !== node.value) {
+      setDisplayValue(external);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [node.value]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const inputValue = e.target.value;
     setDisplayValue(inputValue);
-    if (inputValue.trim() === '') {
-      onChange(node.path, '');
-      return;
-    }
-    if (isTemplateExpression(inputValue)) {
-      onChange(node.path, inputValue);
-      return;
-    }
-    const parsed = Number(inputValue);
-    const isValidNumber =
-      Number.isFinite(parsed) && (!isInteger || Number.isInteger(parsed));
-    if (isValidNumber) {
-      onChange(node.path, parsed);
-      return;
-    }
-    // Keep invalid text in form state so existing constraint validation can
-    // report it instead of silently submitting the previous numeric value.
-    onChange(node.path, inputValue);
+    // The engine turns numeric text into a number, '' into "not set", and keeps
+    // template expressions and invalid text as strings so validation can report them.
+    form.setValue(node.path, inputValue);
   };
 
   return (
@@ -261,19 +365,18 @@ export const NumberFieldRenderer: React.FC<FieldRendererProps> = ({
         type="text"
         value={displayValue}
         onChange={handleChange}
-        disabled={disabled}
+        disabled={disabled || field.readOnly}
         error={!!error}
         helperText={error}
         fullWidth
         size="small"
         sx={classes.fieldInput}
-        placeholder={
-          node.schema.default !== undefined ? String(node.schema.default) : ''
-        }
+        placeholder={field.hasDefault ? textOf(field.default) : ''}
         inputProps={{
-          'data-testid': `field-${node.path}`,
-          min: node.schema.minimum,
-          max: node.schema.maximum,
+          'data-testid': `field-${testPath(node.path)}`,
+          'aria-label': field.label,
+          min: field.constraints.minimum,
+          max: field.constraints.maximum,
           step: isInteger ? 1 : 'any',
           inputMode: 'decimal',
         }}
@@ -283,44 +386,110 @@ export const NumberFieldRenderer: React.FC<FieldRendererProps> = ({
 };
 
 /**
- * Renders a simple array field (array of strings)
+ * Renders a const value read-only
+ */
+export const ConstantFieldRenderer: React.FC<FieldRendererProps> = ({ node }) => {
+  const classes = useStyles();
+  return (
+    <Box sx={classes.fieldContainer}>
+      <TextField
+        value={textOf(node.field.default)}
+        disabled
+        fullWidth
+        size="small"
+        sx={classes.fieldInput}
+        inputProps={{
+          'data-testid': `field-${testPath(node.path)}`,
+          'aria-label': node.field.label,
+        }}
+      />
+    </Box>
+  );
+};
+
+/**
+ * Renders a simple array field (strings, numbers or integers) as tags
  */
 export const SimpleArrayFieldRenderer: React.FC<FieldRendererProps> = ({
   node,
-  value,
-  onChange,
+  form,
   error,
   disabled,
 }) => {
   const classes = useStyles();
-  const itemType = node.schema.items?.type;
-  const arrayValue = Array.isArray(value)
-    ? (value as Array<string | number>).map((item) => String(item))
+  const itemKind = node.field.item?.kind;
+  const arrayValue = Array.isArray(node.value)
+    ? (node.value as unknown[]).map((item) => String(item))
     : [];
 
   const handleArrayChange = (newValue: string[]) => {
-    if (itemType === 'number' || itemType === 'integer') {
-      const parsed = newValue.map((item) => {
-        const numberValue = Number(item);
-        return Number.isNaN(numberValue) ? item : numberValue;
-      });
-      onChange(node.path, parsed);
+    if (itemKind === 'number' || itemKind === 'integer') {
+      form.setValue(
+        node.path,
+        newValue.map((item) => {
+          if (isTemplateExpression(item)) return item;
+          const numberValue = Number(item);
+          return Number.isNaN(numberValue) ? item : numberValue;
+        })
+      );
       return;
     }
-    onChange(node.path, newValue);
+    form.setValue(node.path, newValue);
   };
 
   return (
     <Box sx={classes.fieldContainer}>
       <SimpleTagInput
-        testId={`field-${node.path}`}
+        testId={`field-${testPath(node.path)}`}
         placeholder="Type a value and press enter"
         value={arrayValue}
         onChange={handleArrayChange}
         helperText={error}
         error={!!error}
-        disabled={disabled}
+        disabled={disabled || node.field.readOnly}
       />
+    </Box>
+  );
+};
+
+/**
+ * Renders an array of enum values as a set of checkboxes
+ */
+export const MultiSelectFieldRenderer: React.FC<FieldRendererProps> = ({
+  node,
+  form,
+  error,
+  disabled,
+}) => {
+  const classes = useStyles();
+  const selected = Array.isArray(node.value) ? (node.value as unknown[]) : [];
+  const toggle = (value: unknown, on: boolean) => {
+    const options = node.field.options ?? [];
+    // keep the definition's order
+    const next = options
+      .map((o) => o.value)
+      .filter((v) => (v === value ? on : selected.includes(v)));
+    form.setValue(node.path, next);
+  };
+  return (
+    <Box sx={classes.fieldContainer}>
+      <Box sx={classes.multiSelectRow} data-testid={`field-${testPath(node.path)}`}>
+        {(node.field.options ?? []).map((option) => (
+          <FormControlLabel
+            key={String(option.value)}
+            label={<Typography sx={classes.choiceLabel}>{option.label}</Typography>}
+            control={
+              <Checkbox
+                size="small"
+                checked={selected.includes(option.value)}
+                onChange={(e) => toggle(option.value, e.target.checked)}
+                disabled={disabled || node.field.readOnly}
+              />
+            }
+          />
+        ))}
+      </Box>
+      {error && <Box sx={classes.errorText}>{error}</Box>}
     </Box>
   );
 };
@@ -330,154 +499,108 @@ export const SimpleArrayFieldRenderer: React.FC<FieldRendererProps> = ({
  */
 export const KeyValueFieldRenderer: React.FC<FieldRendererProps> = ({
   node,
-  value,
-  onChange,
+  form,
   disabled,
 }) => {
   const classes = useStyles();
-  const [newKey, setNewKey] = useState('');
-  const [newValue, setNewValue] = useState('');
-
-  // Get current entries as array of [key, value] pairs
-  const objectValue =
-    value && typeof value === 'object' && !Array.isArray(value)
-      ? (value as Record<string, string>)
-      : {};
-  const entries = Object.entries(objectValue);
-
-  const handleAdd = () => {
-    if (newKey.trim()) {
-      const updated = { ...objectValue, [newKey.trim()]: newValue };
-      onChange(node.path, updated);
-      setNewKey('');
-      setNewValue('');
-    }
-  };
-
-  const handleDelete = (keyToDelete: string) => {
-    const updated = { ...objectValue };
-    delete updated[keyToDelete];
-    onChange(node.path, updated);
-  };
-
-  const handleValueChange = (key: string, newVal: string) => {
-    const updated = { ...objectValue, [key]: newVal };
-    onChange(node.path, updated);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleAdd();
-    }
-  };
+  const entries = node.entries ?? [];
+  const isLocked = disabled || node.field.readOnly;
 
   return (
     <Box sx={classes.fieldContainer}>
       {/* Existing entries */}
-      {entries.map(([key, val]) => (
-        <Box key={key} sx={classes.keyValueRow}>
-          <TextField
-            value={key}
-            disabled={disabled}
-            size="small"
-            sx={classes.keyValueKey}
-            inputProps={{
-              'data-testid': `field-${node.path}-key-${key}`,
-            }}
-          />
-          <TextField
-            value={val}
-            onChange={(e) => handleValueChange(key, e.target.value)}
-            disabled={disabled}
-            size="small"
-            sx={classes.keyValueValue}
-            inputProps={{
-              'data-testid': `field-${node.path}-value-${key}`,
-            }}
-          />
-          <IconButton
-            size="small"
-            onClick={() => handleDelete(key)}
-            disabled={disabled}
-            sx={classes.keyValueDeleteButton}
-          >
-            <Trash2 size={14} />
-          </IconButton>
-        </Box>
-      ))}
-      {/* Add new entry row */}
-      <Box sx={classes.keyValueRow}>
-        <TextField
-          value={newKey}
-          onChange={(e) => setNewKey(e.target.value)}
-          placeholder="Key"
-          disabled={disabled}
-          size="small"
-          sx={classes.keyValueKey}
-          onKeyDown={handleKeyDown}
-          inputProps={{
-            'data-testid': `field-${node.path}-new-key`,
-          }}
-        />
-        <TextField
-          value={newValue}
-          onChange={(e) => setNewValue(e.target.value)}
-          placeholder="Value"
-          disabled={disabled}
-          size="small"
-          sx={classes.keyValueValue}
-          onKeyDown={handleKeyDown}
-          inputProps={{
-            'data-testid': `field-${node.path}-new-value`,
-          }}
-        />
+      {entries.map((entry) => {
+        const ValueRenderer = getFieldRenderer(entry.node) ?? TextAreaFieldRenderer;
+        const keyError = entry.keyErrors[0];
+        return (
+          <Box key={entry.index} sx={classes.keyValueRow}>
+            <TextField
+              value={entry.key}
+              onChange={(e) => form.setEntryKey(node.path, entry.index, e.target.value)}
+              disabled={isLocked}
+              error={!!keyError}
+              helperText={keyError}
+              size="small"
+              sx={classes.keyValueKey}
+              inputProps={{
+                'data-testid': `field-${testPath(node.path)}-key-${entry.key}`,
+                'aria-label': 'Key',
+              }}
+            />
+            <Box sx={classes.keyValueValue}>
+              <ValueRenderer
+                node={entry.node}
+                form={form}
+                error={entry.node.errors[0]}
+                disabled={isLocked}
+              />
+            </Box>
+            <IconButton
+              size="small"
+              onClick={() => form.removeItem(node.path, entry.index)}
+              disabled={isLocked}
+              sx={classes.keyValueDeleteButton}
+              aria-label={`Delete ${entry.key || 'entry'}`}
+            >
+              <Trash2 size={14} />
+            </IconButton>
+          </Box>
+        );
+      })}
+      {!isLocked && (
         <Button
           variant="outlined"
           size="small"
-          onClick={handleAdd}
-          disabled={disabled || !newKey.trim()}
-          data-testid={`field-${node.path}-add`}
+          onClick={() => form.addEntry(node.path)}
+          data-testid={`field-${testPath(node.path)}-add`}
           startIcon={<Plus size={14} />}
+          sx={{ borderStyle: 'dashed', textTransform: 'none', my: 0.5 }}
         >
-          Add
+          Add entry
         </Button>
-      </Box>
+      )}
     </Box>
   );
 };
 
 /**
- * Get the appropriate field renderer based on schema type
+ * Get the renderer for a field. Objects and lists of objects return null: the
+ * tree renders those as expandable nodes.
  */
 export const getFieldRenderer = (
-  node: FieldRendererProps['node']
+  node: ViewNode
 ): React.FC<FieldRendererProps> | null => {
-  const { schema } = node;
-
-  switch (schema.type) {
-    case 'string':
+  switch (node.field.kind) {
+    case 'text':
+    case 'url':
       return StringFieldRenderer;
+    case 'secret':
+      return SecretFieldRenderer;
+    case 'textarea':
+    case 'json':
+      return TextAreaFieldRenderer;
+    case 'select':
+      return SelectFieldRenderer;
     case 'boolean':
       return BooleanFieldRenderer;
-    case 'number':
     case 'integer':
+    case 'number':
       return NumberFieldRenderer;
-    case 'array':
-      // Simple arrays (strings, numbers) use TagInput
-      // Complex arrays (objects) are handled separately
-      if (schema.items?.type === 'string' || schema.items?.type === 'number') {
-        return SimpleArrayFieldRenderer;
-      }
-      return null;
-    case 'object':
-      // Objects with additionalProperties (dynamic key-value maps)
-      if (schema.additionalProperties && !schema.properties) {
-        return KeyValueFieldRenderer;
-      }
-      // Objects with fixed properties are rendered as expandable tree nodes
-      return null;
+    case 'constant':
+      return ConstantFieldRenderer;
+    case 'list':
+      return SimpleArrayFieldRenderer;
+    case 'multiselect':
+      return MultiSelectFieldRenderer;
+    case 'map':
+      return KeyValueFieldRenderer;
     default:
-      return StringFieldRenderer;
+      return null;
   }
 };
+
+/** The error to show inline for a field renderer. */
+export const fieldError = (node: ViewNode): string | undefined =>
+  node.field.kind === 'list' || node.field.kind === 'multiselect'
+    ? listError(node)
+    : node.errors[0];

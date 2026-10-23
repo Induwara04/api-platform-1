@@ -11,20 +11,21 @@
  * associated services.
  */
 
-import React, {
-  useState,
-  useCallback,
-  useMemo,
-  useRef,
-  useEffect,
-} from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Box,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
   Typography,
   Collapse,
   IconButton,
   Button,
   Chip,
+  Checkbox,
+  FormControlLabel,
+  Radio,
+  RadioGroup,
 } from '@wso2/oxygen-ui';
 import {
   ChevronRight,
@@ -32,11 +33,9 @@ import {
   Plus,
   Trash2,
 } from '@wso2/oxygen-ui-icons-react';
-import { SchemaTreeNode, ParameterSchema, ParameterValues } from './types';
-import { schemaToTreeNodes, getValueByPath } from './schemaUtils';
-import { getFieldRenderer } from './FieldRenderers';
+import type { GroupView, PolicyForm, ViewNode } from './engine';
+import { fieldError, getFieldRenderer, testPath } from './FieldRenderers';
 import { useStyles } from './styles';
-import { FormattedMessage } from 'react-intl';
 
 const MAX_DESCRIPTION_LINES = 5;
 
@@ -79,115 +78,175 @@ const TruncatedDescription: React.FC<{
   );
 };
 
-interface ChildrenWithAdvancedProps {
-  children: SchemaTreeNode[];
-  values: ParameterValues;
-  onChange: (path: string, value: unknown) => void;
-  onAddArrayItem: (arrayPath: string, itemSchema: ParameterSchema) => void;
-  onDeleteArrayItem: (arrayPath: string, index: number) => void;
-  errors: Record<string, string>;
+/** Advanced fields go under "Advanced Settings", unless they are currently required. */
+const isAdvancedNode = (node: ViewNode): boolean =>
+  node.field.advanced && !node.required;
+
+/** Whether a node or anything under it has an error. */
+const hasErrorsDeep = (node: ViewNode): boolean =>
+  node.errors.length > 0 ||
+  (node.groups ?? []).some((g) => g.errors.length > 0) ||
+  (node.children ?? []).some((c) => c.visible && hasErrorsDeep(c)) ||
+  (node.items ?? []).some(hasErrorsDeep) ||
+  (node.entries ?? []).some((e) => e.keyErrors.length > 0 || hasErrorsDeep(e.node));
+
+interface TreeContext {
+  form: PolicyForm;
+  showErrors: boolean;
   disabled?: boolean;
 }
 
 /**
- * Splits children into normal and advanced groups based on x-wso2-policy-advanced-param
+ * Selector for a oneOf / anyOf group: radio buttons when exactly one option
+ * applies, checkboxes when any combination does. Only the chosen fields show.
  */
-const ChildrenWithAdvanced: React.FC<ChildrenWithAdvancedProps> = ({
-  children,
-  values,
-  onChange,
-  onAddArrayItem,
-  onDeleteArrayItem,
-  errors,
+const GroupSelector: React.FC<{ group: GroupView } & TreeContext> = ({
+  group,
+  form,
+  showErrors,
   disabled,
 }) => {
   const classes = useStyles();
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const g = group.group;
+  const testId = `group-${group.instanceKey.replace(/#/g, '-') || 'root'}`;
+  const toggle = (id: string, on: boolean) =>
+    form.setChoice(
+      group.instanceKey,
+      on ? [...group.selected, id] : group.selected.filter((x) => x !== id)
+    );
+  return (
+    <Box component="fieldset" sx={classes.groupSelector} data-testid={testId}>
+      <Typography component="legend" sx={classes.groupSelectorLabel}>
+        {g.multi ? 'Configure at least one' : 'Choose one'}
+      </Typography>
+      {g.multi ? (
+        <Box sx={classes.multiSelectRow}>
+          {g.options.map((o) => (
+            <FormControlLabel
+              key={o.id}
+              label={<Typography sx={classes.choiceLabel}>{o.label}</Typography>}
+              control={
+                <Checkbox
+                  size="small"
+                  checked={group.selected.includes(o.id)}
+                  onChange={(e) => toggle(o.id, e.target.checked)}
+                  disabled={disabled}
+                  inputProps={{ 'aria-label': o.label }}
+                />
+              }
+            />
+          ))}
+        </Box>
+      ) : (
+        <RadioGroup
+          row
+          value={group.selected[0] ?? ''}
+          onChange={(e) => form.setChoice(group.instanceKey, [e.target.value])}
+        >
+          {g.options.map((o) => (
+            <FormControlLabel
+              key={o.id}
+              value={o.id}
+              label={<Typography sx={classes.choiceLabel}>{o.label}</Typography>}
+              control={<Radio size="small" disabled={disabled} />}
+            />
+          ))}
+        </RadioGroup>
+      )}
+      {showErrors &&
+        group.errors.map((e) => (
+          <Box key={e} sx={classes.errorText}>
+            {e}
+          </Box>
+        ))}
+    </Box>
+  );
+};
 
-  const { normalChildren, advancedChildren } = useMemo(() => {
-    const normal: SchemaTreeNode[] = [];
-    const advanced: SchemaTreeNode[] = [];
-    children.forEach((child) => {
-      if (child.isAdvanced) {
-        advanced.push(child);
-      } else {
-        normal.push(child);
-      }
+interface ChildrenWithAdvancedProps extends TreeContext {
+  parent: ViewNode;
+  depth: number;
+}
+
+/**
+ * Splits children into normal and advanced groups based on x-wso2-policy-advanced-param.
+ * A choice-group selector is placed just before the group's first field.
+ */
+const ChildrenWithAdvanced: React.FC<ChildrenWithAdvancedProps> = ({
+  parent,
+  depth,
+  ...ctx
+}) => {
+  const classes = useStyles();
+  const [showAdvanced, setShowAdvanced] = useState<boolean | null>(null);
+
+  const { normalItems, advancedChildren } = useMemo(() => {
+    const normal: Array<{ kind: 'group'; group: GroupView } | { kind: 'node'; node: ViewNode }> = [];
+    const advanced: ViewNode[] = [];
+    const placed = new Set<GroupView>();
+    (parent.children ?? []).forEach((child) => {
+      (parent.groups ?? []).forEach((g) => {
+        if (!placed.has(g) && g.group.members.includes(child.field.key)) {
+          placed.add(g);
+          normal.push({ kind: 'group', group: g });
+        }
+      });
+      if (!child.visible) return;
+      if (isAdvancedNode(child)) advanced.push(child);
+      else normal.push({ kind: 'node', node: child });
     });
-    return { normalChildren: normal, advancedChildren: advanced };
-  }, [children]);
+    return { normalItems: normal, advancedChildren: advanced };
+  }, [parent]);
 
   const hasAdvanced = advancedChildren.length > 0;
+  const advancedOpen =
+    showAdvanced ?? (ctx.showErrors && advancedChildren.some(hasErrorsDeep));
 
   return (
     <Box sx={classes.nodeChildren}>
-      {normalChildren.map((child) => (
-        <SchemaTreeNodeComponent
-          key={child.id}
-          node={child}
-          values={values}
-          onChange={onChange}
-          onAddArrayItem={onAddArrayItem}
-          onDeleteArrayItem={onDeleteArrayItem}
-          errors={errors}
-          disabled={disabled}
-        />
-      ))}
-      {hasAdvanced && (
-        <Box
-          sx={[
-            classes.advancedSettingsToggle,
-            normalChildren.length === 0
-              ? classes.advancedSettingsToggleNoBorder
-              : null,
-          ]}
-        >
-          <Button
-            variant="text"
-            size="small"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            startIcon={
-              showAdvanced ? (
-                <ChevronDown size={14} />
-              ) : (
-                <ChevronRight size={14} />
-              )
-            }
-          >
-            Advanced Settings
-          </Button>
-        </Box>
+      {normalItems.map((item) =>
+        item.kind === 'group' ? (
+          <GroupSelector key={`group-${item.group.instanceKey}`} group={item.group} {...ctx} />
+        ) : (
+          <SchemaTreeNodeComponent key={item.node.pathKey} node={item.node} depth={depth} {...ctx} />
+        )
       )}
       {hasAdvanced && (
-        <Collapse in={showAdvanced}>
-          <Box sx={classes.optionalFieldsSection}>
+        <Accordion
+          expanded={advancedOpen}
+          onChange={(_, expanded) => setShowAdvanced(expanded)}
+          variant="outlined"
+          sx={{
+            borderRadius: 1,
+            '&:first-of-type, &:last-of-type': { borderRadius: 1 },
+            '&::before': { display: 'none' },
+            overflow: 'hidden',
+          }}
+          disableGutters
+        >
+          <AccordionSummary
+            expandIcon={<ChevronDown size={16} />}
+            aria-label="Advanced Settings"
+          >
+            <Typography variant="subtitle2" sx={{ fontSize: '0.75rem' }}>
+              Advanced settings ({advancedChildren.length})
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails>
             {advancedChildren.map((child) => (
-              <SchemaTreeNodeComponent
-                key={child.id}
-                node={child}
-                values={values}
-                onChange={onChange}
-                onAddArrayItem={onAddArrayItem}
-                onDeleteArrayItem={onDeleteArrayItem}
-                errors={errors}
-                disabled={disabled}
-              />
+              <SchemaTreeNodeComponent key={child.pathKey} node={child} depth={depth} {...ctx} />
             ))}
-          </Box>
-        </Collapse>
+          </AccordionDetails>
+        </Accordion>
       )}
     </Box>
   );
 };
 
-interface SchemaTreeNodeProps {
-  node: SchemaTreeNode;
-  values: ParameterValues;
-  onChange: (path: string, value: unknown) => void;
-  onAddArrayItem: (arrayPath: string, itemSchema: ParameterSchema) => void;
-  onDeleteArrayItem: (arrayPath: string, index: number) => void;
-  errors: Record<string, string>;
-  disabled?: boolean;
+interface SchemaTreeNodeProps extends TreeContext {
+  node: ViewNode;
+  depth: number;
+  defaultExpanded?: boolean;
 }
 
 /**
@@ -195,132 +254,85 @@ interface SchemaTreeNodeProps {
  */
 const SchemaTreeNodeComponent: React.FC<SchemaTreeNodeProps> = ({
   node,
-  values,
-  onChange,
-  onAddArrayItem,
-  onDeleteArrayItem,
-  errors,
-  disabled,
+  depth,
+  defaultExpanded = false,
+  ...ctx
 }) => {
+  const { form, showErrors, disabled } = ctx;
   const classes = useStyles();
-  const [isExpanded, setIsExpanded] = useState(node.isExpanded ?? false);
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  const { field } = node;
 
-  const value = getValueByPath(values, node.path);
-  const error = errors[node.path];
-  const hasChildren = node.children && node.children.length > 0;
-  const isObjectOrArray =
-    node.schema.type === 'object' || node.schema.type === 'array';
-  const isComplexArray =
-    node.schema.type === 'array' && node.schema.items?.type === 'object';
+  const last = node.path[node.path.length - 1];
+  const isArrayItem = typeof last === 'number';
+  const parentPath = node.path.slice(0, -1);
+  const isObject = field.kind === 'object';
+  const isComplexArray = field.kind === 'objectList';
+  const items = node.items ?? [];
+  // An optional section that isn't configured yet (no value) shows only its header.
+  const isOffSection = isObject && field.toggleable === true && node.enabled === false;
+  const visibleChildren = (node.children ?? []).filter((c) => c.visible);
 
   // Determine if this node has expandable content
-  const arrayValue = Array.isArray(value) ? value : [];
   const hasExpandableContent =
-    (hasChildren && !isComplexArray) || // Objects with children
-    (isComplexArray && arrayValue.length > 0); // Complex arrays with items
+    (isObject && (isOffSection || visibleChildren.length > 0 || (node.groups ?? []).length > 0)) ||
+    (isComplexArray && items.length > 0);
+  const expanded =
+    !isOffSection && (isExpanded || (showErrors && hasErrorsDeep(node)));
 
-  const toggleExpand = useCallback(() => {
-    setIsExpanded((prev) => !prev);
-  }, []);
+  const toggleExpand = () => {
+    if (isOffSection) {
+      // Expanding an unconfigured section starts configuring it, with its defaults.
+      form.setEnabled(node.path, true);
+      setIsExpanded(true);
+      return;
+    }
+    setIsExpanded(!expanded);
+  };
 
-  // Wrap onAddArrayItem to also expand the array
-  const handleAddArrayItem = useCallback(
-    (arrayPath: string, itemSchema: ParameterSchema) => {
-      onAddArrayItem(arrayPath, itemSchema);
-      // Expand this array if we're adding to it
-      if (arrayPath === node.path) {
-        setIsExpanded(true);
-      }
-    },
-    [onAddArrayItem, node.path]
-  );
-
-  const prevArrayLengthRef = useRef(arrayValue.length);
-
-  const newItemIndex =
-    arrayValue.length > prevArrayLengthRef.current ? arrayValue.length - 1 : -1;
-
-  const FieldRenderer = getFieldRenderer(node);
-
-  // Get array items for complex arrays
-  const arrayItems = useMemo(() => {
-    if (!isComplexArray) return [];
-    return arrayValue.map((_, index) => {
-      const itemPath = `${node.path}.${index}`;
-      // New items should start expanded
-      const isNewItem = index === newItemIndex;
-      const itemNode: SchemaTreeNode = {
-        id: itemPath,
-        path: itemPath,
-        name: `Item ${index + 1}`,
-        schema: node.schema.items!,
-        depth: node.depth + 1,
-        isRequired: false,
-        isExpanded: isNewItem,
-        isArrayItem: true,
-        arrayIndex: index,
-        parentArrayPath: node.path,
-        children:
-          node.schema.items?.type === 'object' && node.schema.items?.properties
-            ? schemaToTreeNodes(
-                node.schema.items,
-                itemPath,
-                node.depth + 2,
-                node.schema.items.required || []
-              )
-            : undefined,
-      };
-      return itemNode;
-    });
-  }, [isComplexArray, arrayValue, node, newItemIndex]);
-
+  // New array items start expanded
+  const prevArrayLengthRef = useRef(items.length);
+  const newItemIndex = items.length > prevArrayLengthRef.current ? items.length - 1 : -1;
   useEffect(() => {
-    prevArrayLengthRef.current = arrayValue.length;
+    prevArrayLengthRef.current = items.length;
   });
 
+  const FieldRenderer = getFieldRenderer(node);
+  const ownError = showErrors && !FieldRenderer ? node.errors[0] : undefined;
+  const maxItems = field.constraints.maxItems;
+
   return (
-    <Box sx={classes.treeNode}>
+    <Box sx={[classes.treeNode, isObject ? classes.nestedSection : null]} data-testid={`node-${testPath(node.path)}`}>
       {/* Node Row */}
       <Box
         sx={[
           classes.nodeRow,
           { pl: 0 },
-          isExpanded && hasExpandableContent ? classes.nodeRowExpanded : null,
         ]}
       >
-        {/* Expand/Collapse Icon - only show if there's expandable content */}
-        {hasExpandableContent ? (
-          <Box sx={classes.expandIcon} onClick={toggleExpand}>
-            {isExpanded ? (
-              <ChevronDown size={14} />
-            ) : (
-              <ChevronRight size={14} />
-            )}
-          </Box>
-        ) : (
-          <Box sx={classes.expandIconPlaceholder} />
-        )}
-
         {/* Node Content */}
         <Box sx={classes.nodeContent}>
           {/* Label Row */}
           <Box sx={classes.nodeLabelRow}>
-            <Typography sx={classes.nodeLabel}>{node.name}</Typography>
-            {node.isRequired && (
+            {hasExpandableContent && (
+              <IconButton
+                size="small"
+                sx={classes.expandIcon}
+                onClick={toggleExpand}
+                aria-label={`${expanded ? 'Collapse' : 'Expand'} ${field.label}`}
+                aria-expanded={expanded}
+                data-testid={`expand-${testPath(node.path)}`}
+              >
+                {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              </IconButton>
+            )}
+            <Typography sx={classes.nodeLabel}>
+              {isArrayItem ? `Item ${(last as number) + 1}` : field.label}
+            </Typography>
+            {node.required && !isArrayItem && (
               <Typography sx={classes.requiredBadge}>*</Typography>
             )}
-            {!node.isRequired && node.depth === 0 && (
-              <Typography
-                variant="body2"
-                sx={{ fontSize: '0.75rem', marginLeft: 0.5 }}
-              >
-                <FormattedMessage
-                  id="aiWorkspace.pages.appShell.PolicyParameterEditor.SchemaTree.optional"
-                  defaultMessage={'(Optional)'}
-                />
-              </Typography>
-            )}
-            {node.schema['x-wso2-policy-deprecated-param'] === true && (
+            {field.deprecated && (
               <Chip
                 label="Deprecated"
                 size="small"
@@ -330,52 +342,69 @@ const SchemaTreeNodeComponent: React.FC<SchemaTreeNodeProps> = ({
               />
             )}
             {/* Delete button for array items */}
-            {node.isArrayItem && node.parentArrayPath !== undefined && (
+            {isArrayItem && (
               <IconButton
                 size="small"
                 sx={classes.arrayItemDeleteButton}
-                onClick={() =>
-                  onDeleteArrayItem(node.parentArrayPath!, node.arrayIndex!)
-                }
+                onClick={() => form.removeItem(parentPath, last as number)}
                 disabled={disabled}
-                aria-label={`Delete ${node.name}`}
+                aria-label={`Delete Item ${(last as number) + 1}`}
+              >
+                <Trash2 size={14} />
+              </IconButton>
+            )}
+            {/* Clear button for a configured optional section */}
+            {isObject && field.toggleable && node.enabled && (
+              <IconButton
+                size="small"
+                sx={classes.sectionClearButton}
+                onClick={() => {
+                  form.setEnabled(node.path, false);
+                  setIsExpanded(false);
+                }}
+                disabled={disabled}
+                aria-label={`Clear ${field.label}`}
+                data-testid={`clear-${testPath(node.path)}`}
               >
                 <Trash2 size={14} />
               </IconButton>
             )}
           </Box>
 
-          {/* Description */}
-          {node.schema.description && (
-            <TruncatedDescription
-              description={node.schema.description}
-              classes={classes}
-            />
-          )}
-
           {/* Field Renderer (for leaf nodes) */}
           {FieldRenderer && (
             <FieldRenderer
               node={node}
-              value={value}
-              onChange={onChange}
-              error={error}
+              form={form}
+              error={showErrors ? fieldError(node) : undefined}
               disabled={disabled}
             />
           )}
+          {/* Description */}
+          {field.description && !isArrayItem && !isObject && (
+            <TruncatedDescription description={field.description} classes={classes} />
+          )}
+          {field.gatewayDefault && (
+            <Typography sx={classes.gatewayDefaultHint}>
+              Leave empty to use the gateway&apos;s configured value.
+            </Typography>
+          )}
+
+          {ownError && <Box sx={classes.errorText}>{ownError}</Box>}
 
           {/* Add button for complex arrays */}
-          {isComplexArray && (
+          {isComplexArray && (maxItems === undefined || items.length < maxItems) && (
             <Box sx={classes.arrayContainer}>
               <Button
                 variant="outlined"
                 size="small"
                 startIcon={<Plus size={14} />}
-                onClick={() =>
-                  handleAddArrayItem(node.path, node.schema.items!)
-                }
+                onClick={() => {
+                  form.addItem(node.path);
+                  setIsExpanded(true);
+                }}
                 disabled={disabled}
-                data-testid={`add-${node.path}-item`}
+                data-testid={`add-${testPath(node.path)}-item`}
                 sx={classes.arrayAddButton}
               >
                 Add Item
@@ -386,34 +415,29 @@ const SchemaTreeNodeComponent: React.FC<SchemaTreeNodeProps> = ({
       </Box>
 
       {/* Children (for objects) - split into normal and advanced */}
-      {hasChildren && !isComplexArray && (
-        <Collapse in={isExpanded}>
-          <ChildrenWithAdvanced
-            children={node.children!}
-            values={values}
-            onChange={onChange}
-            onAddArrayItem={handleAddArrayItem}
-            onDeleteArrayItem={onDeleteArrayItem}
-            errors={errors}
-            disabled={disabled}
-          />
+      {isObject && !isOffSection && (
+        <Collapse in={expanded}>
+          <Box sx={classes.nestedChildren}>
+            <ChildrenWithAdvanced parent={node} depth={depth + 1} {...ctx} />
+          </Box>
         </Collapse>
+      )}
+
+      {isObject && field.description && !isArrayItem && (
+        <TruncatedDescription description={field.description} classes={classes} />
       )}
 
       {/* Array Items (for complex arrays) */}
       {isComplexArray && (
-        <Collapse in={isExpanded}>
+        <Collapse in={expanded}>
           <Box sx={classes.nodeChildren}>
-            {arrayItems.map((itemNode) => (
-              <Box key={itemNode.id} sx={classes.arrayItem}>
+            {items.map((item, index) => (
+              <Box key={item.pathKey} sx={classes.arrayItem}>
                 <SchemaTreeNodeComponent
-                  node={itemNode}
-                  values={values}
-                  onChange={onChange}
-                  onAddArrayItem={handleAddArrayItem}
-                  onDeleteArrayItem={onDeleteArrayItem}
-                  errors={errors}
-                  disabled={disabled}
+                  node={item}
+                  depth={depth + 1}
+                  defaultExpanded={index === newItemIndex}
+                  {...ctx}
                 />
               </Box>
             ))}
@@ -425,12 +449,11 @@ const SchemaTreeNodeComponent: React.FC<SchemaTreeNodeProps> = ({
 };
 
 interface SchemaTreeProps {
-  schema: ParameterSchema;
-  values: ParameterValues;
-  onChange: (path: string, value: unknown) => void;
-  onAddArrayItem: (arrayPath: string, itemSchema: ParameterSchema) => void;
-  onDeleteArrayItem: (arrayPath: string, index: number) => void;
-  errors: Record<string, string>;
+  /** The engine's resolved view of the whole form (resolution.view) */
+  view: ViewNode;
+  form: PolicyForm;
+  /** Show validation errors (after the first submit attempt) */
+  showErrors: boolean;
   disabled?: boolean;
 }
 
@@ -439,29 +462,27 @@ interface SchemaTreeProps {
  * Splits first-level parameters into required and optional (advanced) sections
  */
 const SchemaTree: React.FC<SchemaTreeProps> = ({
-  schema,
-  values,
-  onChange,
-  onAddArrayItem,
-  onDeleteArrayItem,
-  errors,
+  view,
+  form,
+  showErrors,
   disabled,
 }) => {
   const classes = useStyles();
-
-  const treeNodes = useMemo(() => {
-    return schemaToTreeNodes(schema, '', 0, schema.required || []);
-  }, [schema]);
+  // Rules that span several top-level fields (e.g. "this combination isn't allowed")
+  const rootErrors = showErrors ? view.errors : [];
 
   return (
-    <Box sx={classes.treeContainer}>
+    <Box>
+      {rootErrors.map((e) => (
+        <Box key={e} sx={classes.errorText} role="alert">
+          {e}
+        </Box>
+      ))}
       <ChildrenWithAdvanced
-        children={treeNodes}
-        values={values}
-        onChange={onChange}
-        onAddArrayItem={onAddArrayItem}
-        onDeleteArrayItem={onDeleteArrayItem}
-        errors={errors}
+        parent={view}
+        depth={0}
+        form={form}
+        showErrors={showErrors}
         disabled={disabled}
       />
     </Box>

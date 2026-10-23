@@ -16,6 +16,7 @@
  * under the License.
  */
 
+import { POLICY_HUB_WEB_URL } from '../../../../config.env';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box,
@@ -43,6 +44,7 @@ import {
   ChevronRight,
   Search,
   ShieldCheck,
+  ExternalLink,
   X,
   ChevronUp,
 } from '@wso2/oxygen-ui-icons-react';
@@ -1455,7 +1457,7 @@ export default function ServiceProviderGuardrailsTab() {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
       >
-        <Box sx={{ width: { xs: '100vw', sm: 450, md: 600 }, maxWidth: '100vw', p: 2 }}>
+        <Box sx={{ width: { xs: '100vw', sm: '90vw', md: 960 }, maxWidth: '100vw', boxSizing: 'border-box', p: { xs: 2, sm: 3 } }}>
           <Box
             sx={{
               display: 'flex',
@@ -1464,14 +1466,14 @@ export default function ServiceProviderGuardrailsTab() {
               gap: 1,
             }}
           >
-            <Stack spacing={0.5}>
-              <Typography variant="subtitle1">
+            <Stack spacing={0.125}>
+              <Typography variant="subtitle2" sx={{ fontSize: '0.875rem', lineHeight: 1.4 }}>
                 <FormattedMessage
                   id="aiWorkspace.pages.appShell.appShellPages.serviceProvider.ServiceProviderGuardrailsTab.guardrail.policies"
                   defaultMessage="Guardrails"
                 />
               </Typography>
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem', lineHeight: 1.4 }}>
                 <FormattedMessage
                   id="aiWorkspace.pages.appShell.appShellPages.serviceProvider.ServiceProviderGuardrailsTab.choose.a.guardrail.to.configure.advanced.options"
                   defaultMessage={
@@ -1480,6 +1482,18 @@ export default function ServiceProviderGuardrailsTab() {
                 />
               </Typography>
             </Stack>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<ExternalLink size={12} />}
+                href={POLICY_HUB_WEB_URL || 'https://wso2.com/api-platform/policy-hub/'}
+                target="_blank"
+                rel="noopener noreferrer"
+                sx={{ whiteSpace: 'nowrap', fontSize: '0.75rem' }}
+              >
+                Policy Hub
+              </Button>
             <IconButton
               size="small"
               aria-label="Close guardrail drawer"
@@ -1487,9 +1501,10 @@ export default function ServiceProviderGuardrailsTab() {
             >
               <X size={18} />
             </IconButton>
+            </Box>
           </Box>
 
-          <Divider sx={{ my: 2 }} />
+          <Divider sx={{ my: 1 }} />
 
           <Stack spacing={3}>
             <Box>
@@ -1500,20 +1515,14 @@ export default function ServiceProviderGuardrailsTab() {
                 <>
                   {!isDetailView ? (
                     <>
-                      <Box sx={{ my: 1 }}>
-                        <PolicyCategorySelector
-                          value={selectedCategories}
-                          onChange={setSelectedCategories}
-                        />
-                      </Box>
-
-                      <TextField
+                      <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 1.5, my: 2 }}>
+                        <TextField
                         size="small"
                         fullWidth
                         placeholder="Search guardrails"
                         value={guardrailSearchQuery}
                         onChange={(e) => setGuardrailSearchQuery(e.target.value)}
-                        sx={{ mt: 1 }}
+                        sx={{ flex: '1 1 0', minWidth: 0, '& .MuiInputBase-root': { minHeight: 40 } }}
                         slotProps={{
                           input: {
                             startAdornment: (
@@ -1524,6 +1533,14 @@ export default function ServiceProviderGuardrailsTab() {
                           },
                         }}
                       />
+                        <Box sx={{ flex: '0 0 24%', maxWidth: 220, minWidth: 150 }}>
+                        <PolicyCategorySelector
+                          showPolicyHub={false}
+                          value={selectedCategories}
+                          onChange={setSelectedCategories}
+                        />
+                      </Box>
+                      </Box>
                     <Stack spacing={1.25} sx={{ mt: 1 }}>
                       {!drawerItemsLoading && drawerGuardrailsError && (
                         <PartialLoadWarning
@@ -1623,20 +1640,6 @@ export default function ServiceProviderGuardrailsTab() {
                     </>
                   ) : (
                     <Stack spacing={1.5} sx={{ mt: 1 }}>
-                      <Box>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                          <Typography variant="subtitle2">
-                            {selectedGuardrailPolicy?.displayName ||
-                              selectedGuardrailPolicy?.name}
-                          </Typography>
-                          {Boolean(selectedGuardrailPolicy?.isCustomPolicy) && (
-                            <Chip label="Custom" size="small" variant="outlined" color="primary" />
-                          )}
-                        </Box>
-                        <Typography variant="caption" color="text.secondary">
-                          {selectedGuardrailPolicy?.version}
-                        </Typography>
-                      </Box>
                       <Card>
                         <CardContent sx={{ p: 2 }}>
                           {definitionLoading ? (

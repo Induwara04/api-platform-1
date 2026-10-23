@@ -16,6 +16,7 @@
  * under the License.
  */
 
+import { POLICY_HUB_WEB_URL } from '../../../../../config.env';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Box,
@@ -34,7 +35,7 @@ import {
   TextField,
   Typography,
 } from '@wso2/oxygen-ui';
-import { Plus, Search, X } from '@wso2/oxygen-ui-icons-react';
+import { ExternalLink, Plus, Search, X } from '@wso2/oxygen-ui-icons-react';
 import { useGuardrails } from '../../../../../contexts/GuardrailsContext';
 import { getGuardrails, getPolicies } from '../../../../../apis/policyHubApis';
 import { getGatewayCustomPolicies } from '../../../../../apis/gatewayPolicyApis';
@@ -457,7 +458,7 @@ export default function GuardrailsSection({
       </Grid>
 
       <Drawer anchor="right" open={guardrailDrawerOpen} onClose={onCloseDrawer}>
-        <Box sx={{ width: 600, p: 2 }}>
+        <Box sx={{ width: { xs: '100vw', sm: '90vw', md: 960 }, maxWidth: '100vw', boxSizing: 'border-box', p: { xs: 2, sm: 3 } }}>
           <Box
             sx={{
               display: 'flex',
@@ -466,14 +467,14 @@ export default function GuardrailsSection({
               gap: 1,
             }}
           >
-            <Stack spacing={0.5}>
-              <Typography variant="subtitle1">
+            <Stack spacing={0.125}>
+              <Typography variant="subtitle2" sx={{ fontSize: '0.875rem', lineHeight: 1.4 }}>
                 <FormattedMessage
                   id="aiWorkspace.pages.appShell.appShellPages.serviceProvider.AddNewProvider.GuardrailsSection.guardrail.policies"
                   defaultMessage="Guardrails"
                 />
               </Typography>
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem', lineHeight: 1.4 }}>
                 <FormattedMessage
                   id="aiWorkspace.pages.appShell.appShellPages.serviceProvider.AddNewProvider.GuardrailsSection.choose.a.guardrail.to.configure.advanced.options"
                   defaultMessage={
@@ -482,6 +483,18 @@ export default function GuardrailsSection({
                 />
               </Typography>
             </Stack>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<ExternalLink size={12} />}
+                href={POLICY_HUB_WEB_URL || 'https://wso2.com/api-platform/policy-hub/'}
+                target="_blank"
+                rel="noopener noreferrer"
+                sx={{ whiteSpace: 'nowrap', fontSize: '0.75rem' }}
+              >
+                Policy Hub
+              </Button>
             <IconButton
               size="small"
               aria-label="Close guardrail drawer"
@@ -489,28 +502,23 @@ export default function GuardrailsSection({
             >
               <X size={18} />
             </IconButton>
+            </Box>
           </Box>
 
-          <Divider sx={{ my: 2 }} />
+          <Divider sx={{ my: 1 }} />
 
           <Stack spacing={3}>
             <Box>
               {!isDetailView ? (
                 <>
-                  <Box sx={{ my: 1 }}>
-                    <PolicyCategorySelector
-                      value={selectedCategories}
-                      onChange={setSelectedCategories}
-                    />
-                  </Box>
-
-                  <TextField
+                  <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 1.5, my: 2 }}>
+                    <TextField
                     size="small"
                     fullWidth
                     placeholder="Search guardrails"
                     value={guardrailSearchQuery}
                     onChange={(e) => setGuardrailSearchQuery(e.target.value)}
-                    sx={{ mt: 1 }}
+                    sx={{ flex: '1 1 0', minWidth: 0, '& .MuiInputBase-root': { minHeight: 40 } }}
                     slotProps={{
                       input: {
                         startAdornment: (
@@ -521,6 +529,14 @@ export default function GuardrailsSection({
                       },
                     }}
                   />
+                    <Box sx={{ flex: '0 0 24%', maxWidth: 220, minWidth: 150 }}>
+                    <PolicyCategorySelector
+                          showPolicyHub={false}
+                      value={selectedCategories}
+                      onChange={setSelectedCategories}
+                    />
+                  </Box>
+                  </Box>
 
                   {drawerItemsLoading ? (
                     <Box

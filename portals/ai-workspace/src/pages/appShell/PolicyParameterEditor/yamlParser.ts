@@ -20,6 +20,7 @@ import { PolicyDefinition, ParameterSchema } from './types';
 interface RawPolicyYaml {
   name: string;
   version: string;
+  displayName?: string;
   description: string;
   parameters?: ParameterSchema;
   systemParameters?: ParameterSchema;
@@ -48,6 +49,7 @@ export function parsePolicyYaml(yamlContent: string): PolicyDefinition {
   return {
     name: parsed.name,
     version: parsed.version,
+    ...(parsed.displayName ? { displayName: parsed.displayName } : {}),
     description: parsed.description || '',
     parameters,
     systemParameters: parsed.systemParameters,

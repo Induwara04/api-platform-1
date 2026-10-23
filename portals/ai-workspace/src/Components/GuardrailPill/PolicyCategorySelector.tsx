@@ -21,13 +21,13 @@ import {
   Box,
   Button,
   Checkbox,
-  Chip,
   IconButton,
   Paper,
   Typography,
+  Tooltip,
 } from '@wso2/oxygen-ui';
 import { POLICY_HUB_WEB_URL } from '../../config.env';
-import { ChevronDown, ChevronUp, ExternalLink, X } from '@wso2/oxygen-ui-icons-react';
+import { ChevronDown, ChevronUp, ExternalLink, ListFilter, X } from '@wso2/oxygen-ui-icons-react';
 
 export const POLICY_CATEGORIES = [
   'AI',
@@ -41,12 +41,14 @@ export const POLICY_CATEGORIES = [
 
 export interface PolicyCategorySelectorProps {
   value: string[];
+  showPolicyHub?: boolean;
   onChange: (categories: string[]) => void;
 }
 
 export default function PolicyCategorySelector({
   value,
   onChange,
+  showPolicyHub = true,
 }: PolicyCategorySelectorProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -71,20 +73,17 @@ export default function PolicyCategorySelector({
 
   return (
     <Box ref={containerRef} sx={{ position: 'relative' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-        <Typography variant="caption" color="text.secondary">
-          Categories
-        </Typography>
+      {showPolicyHub && <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', mb: 0.5 }}>
         <Button
           size="small"
           variant='outlined'
           startIcon={<ExternalLink size={12} />}
           onClick={() => window.open(policyHubUrl, '_blank', 'noopener,noreferrer')}
-          sx={{marginBottom:'8px'}}
+          sx={{ m: 0, fontSize: '0.75rem' }}
         >
           Policy Hub
         </Button>
-      </Box>
+      </Box>}
       <Box
         onClick={() => setOpen((prev) => !prev)}
         sx={{
@@ -94,37 +93,40 @@ export default function PolicyCategorySelector({
           p: 0.75,
           cursor: 'pointer',
           display: 'flex',
-          flexWrap: 'wrap',
+          flexWrap: 'nowrap',
           gap: 0.5,
           alignItems: 'center',
-          minHeight: 40,
+          height: 40,
+          boxSizing: 'border-box',
+          minWidth: 0,
         }}
       >
-        {value.length === 0 ? (
-          <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
-            All categories
+        <Tooltip title="Categories">
+          <IconButton size="small" aria-label="Categories" sx={{ p: 0.25 }}>
+            <ListFilter size={16} />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title={value.length ? value.join(', ') : 'All categories'}>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            noWrap
+            sx={{ flex: 1, minWidth: 0, fontSize: '0.8125rem' }}
+          >
+            {value.length === 0 ? 'All categories' : value.length === 1 ? value[0] : `${value.length} categories`}
           </Typography>
-        ) : (
-          value.map((cat) => (
-            <Chip
-              key={cat}
-              label={cat}
-              size="small"
-              onDelete={(e) => { e.stopPropagation(); handleToggle(cat); }}
-              deleteIcon={<X size={12} />}
-            />
-          ))
-        )}
-        <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center' }}>
+        </Tooltip>
+        <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
           {value.length > 0 && (
             <IconButton
               size="small"
+              aria-label="Clear categories"
               onClick={(e) => { e.stopPropagation(); onChange([]); }}
             >
               <X size={14} />
             </IconButton>
           )}
-          <IconButton size="small">
+          <IconButton size="small" aria-label={open ? 'Close categories' : 'Open categories'} aria-expanded={open}>
             {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </IconButton>
         </Box>
