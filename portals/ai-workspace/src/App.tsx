@@ -38,6 +38,7 @@ import { DEFAULT_ORG_REGION, isFeatureEnabled } from './config.env';
 
 // App Shell Pages
 import Overview from './pages/appShell/appShellPages/overview/Overview';
+import OverviewPage from './pages/appShell/appShellPages/overview/OverviewPage';
 import ApplicationsLayout from './pages/appShell/appShellPages/applications/ApplicationsLayout';
 import ApplicationsList from './pages/appShell/appShellPages/applications/ApplicationsList';
 import ApplicationNew from './pages/appShell/appShellPages/applications/ApplicationNew';
@@ -518,7 +519,7 @@ function WorkspaceRoutes({ extensions = [] }: AppProps) {
               path="home"
               element={
                 <WithPageBoundary>
-                  <Overview />
+                  <OverviewPage />
                 </WithPageBoundary>
               }
             />
