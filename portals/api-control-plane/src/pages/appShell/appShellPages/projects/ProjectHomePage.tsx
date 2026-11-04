@@ -16,8 +16,8 @@
  * under the License.
  */
 
-import { Divider, Grid } from '@wso2/oxygen-ui';
-import { useState } from 'react';
+import { Divider, Grid, Stack } from '@wso2/oxygen-ui';
+import { Fragment, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
 import { AppPage } from '@/components/AppPage';
@@ -25,6 +25,12 @@ import { useProject } from '@/api/resources/projects';
 import { ErrorState, LoadingState } from '@/components/StateViews';
 import { ApiList } from '@/pages/appShell/appShellPages/apis/listing';
 import type { ApiTypeFilter } from '@/pages/appShell/appShellPages/apis/listing/apiTypeFilter';
+import {
+  PROJECT_OVERVIEW_SIDEBAR_SLOT,
+  type ApiControlPlaneProjectOverviewCard,
+} from '@/extensions';
+import { usePort } from '@/hostPort';
+import { useSlot } from '@/slots';
 import { ProjectMetadata } from './components/ProjectMetadata';
 import { ProjectStatistics } from './components/ProjectStatistics';
 
@@ -64,14 +70,30 @@ function ProjectHomePageContent() {
             typeFilter={apiTypeFilter}
             onClearTypeFilter={() => setApiTypeFilter(null)}
             sidebar={
-              <ProjectStatistics
-                onTypeFilterChange={setApiTypeFilter}
-                selectedType={apiTypeFilter}
-              />
+              <Stack spacing={2}>
+                <ProjectStatistics
+                  onTypeFilterChange={setApiTypeFilter}
+                  selectedType={apiTypeFilter}
+                />
+                <ProjectOverviewCards />
+              </Stack>
             }
           />
         </Grid>
       </Grid>
+    </>
+  );
+}
+
+/** Cards cloud extensions attach beneath the statistics; empty without any. */
+function ProjectOverviewCards() {
+  const port = usePort();
+  const cards = useSlot<ApiControlPlaneProjectOverviewCard>(PROJECT_OVERVIEW_SIDEBAR_SLOT);
+  return (
+    <>
+      {cards.map((card) => (
+        <Fragment key={card.id}>{card.render(port)}</Fragment>
+      ))}
     </>
   );
 }

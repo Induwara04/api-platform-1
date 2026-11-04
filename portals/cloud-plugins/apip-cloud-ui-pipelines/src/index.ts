@@ -19,3 +19,5 @@ export type {
   PromotionPath,
   UpdatePipelineInput,
 } from './types';
+export { default as ProjectPipelineCard } from './ProjectPipelineCard';
+export type { ProjectPipelineCardProps } from './ProjectPipelineCard';

@@ -210,6 +210,14 @@ export const APP_GATE_SLOT = 'app.gate';
  */
 export const HOME_GREETING_SLOT = 'home.greeting';
 
+/**
+ * Slot for cards shown beneath the API type statistics on the Project overview
+ * page. Entries render a self-contained card (or nothing) from the live Port;
+ * like `app.gate` they have no route or nav presence, only `render`. A
+ * deployment that registers nothing here shows the overview exactly as before.
+ */
+export const PROJECT_OVERVIEW_SIDEBAR_SLOT = 'project.overview.sidebar';
+
 /** A `home.greeting` entry — see `HOME_GREETING_SLOT`. Nothing renders; it only supplies a name. */
 export type ApiControlPlaneGreetingSource = SlotEntry & {
   resolveName: (port: CloudHostPort) => string | null | undefined;
@@ -222,6 +230,11 @@ export type ApiControlPlaneGreetingSource = SlotEntry & {
  * Port on every in-shell route and normally returns `null`.
  */
 export type ApiControlPlaneAppGate = SlotEntry & {
+  render: ExtensionRender;
+};
+
+/** A `project.overview.sidebar` entry — see `PROJECT_OVERVIEW_SIDEBAR_SLOT`. */
+export type ApiControlPlaneProjectOverviewCard = SlotEntry & {
   render: ExtensionRender;
 };
 
@@ -289,6 +302,7 @@ export type ApiControlPlaneCloudEntry =
   // being accepted by accident, because it happens to match another arm, is not
   // the same as the registry declaring that gates are entries.
   | ApiControlPlaneAppGate
+  | ApiControlPlaneProjectOverviewCard
   | ApiControlPlaneGreetingSource;
 
 export function ExtensionsProvider({

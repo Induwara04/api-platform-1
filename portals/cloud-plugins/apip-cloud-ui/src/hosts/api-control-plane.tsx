@@ -22,6 +22,7 @@ import type { GatewayType } from '@wso2-enterprise/apip-cloud-ui-gateways';
 import { InsightsFeature } from '@wso2-enterprise/apip-cloud-ui-insights';
 import { LogsFeature, MetricsPanel, ScopedLogsNotice } from '@wso2-enterprise/apip-cloud-ui-logs';
 import { ManagedPortalsPage } from '@wso2-enterprise/apip-cloud-ui-managed-portals';
+import { ProjectPipelineCard } from '@wso2-enterprise/apip-cloud-ui-pipelines';
 import { nameFromPort } from '@wso2-enterprise/apip-cloud-ui-user-profile';
 import {
   EntitlementsGate,
@@ -37,6 +38,7 @@ import {
   PAGE_API_OBSERVABILITY_LOGS_SLOT,
   PAGE_GRAPHQL_API_DEPLOY_SLOT,
   PAGE_GATEWAYS_SLOT,
+  PROJECT_OVERVIEW_SIDEBAR_SLOT,
   type ApiControlPlaneCloudEntry,
   type ApiControlPlaneExtension,
 } from '../../../../api-control-plane/src/extensions';
@@ -189,6 +191,20 @@ export const cloudPluginFeatures: CloudPluginFeature<ApiControlPlaneCloudEntry>[
         slot: HOME_GREETING_SLOT,
         order: 10,
         resolveName: (port) => nameFromPort(port),
+      },
+    ],
+  }),
+  defineCloudPlugin({
+    // Shows the project's bound deployment pipeline under the API type
+    // statistics on the Project overview page; hidden when none is bound.
+    id: 'pipelines',
+    version: '0.1.0',
+    extensions: [
+      {
+        id: 'project-pipeline-card',
+        slot: PROJECT_OVERVIEW_SIDEBAR_SLOT,
+        order: 10,
+        render: (port) => <ProjectPipelineCard port={port} />,
       },
     ],
   }),
